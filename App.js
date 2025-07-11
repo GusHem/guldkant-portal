@@ -3,12 +3,13 @@ import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tansta
 import * as z from 'zod';
 
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-// --- API SERVICE LAYER ---
+// --- API SERVICE LAYER (PROD ENDPOINTS) ---
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // Centraliserar alla API-anrop.
 const API = {
     getQuotes: async () => {
-        const response = await fetch('https://nordsym.app.n8n.cloud/webhook-test/quotes');
+        // UPPDATERAD: Använder produktions-endpoint
+        const response = await fetch('https://nordsym.app.n8n.cloud/webhook/quotes');
         if (!response.ok) throw new Error('Network response was not ok');
         const data = await response.json();
         if (!Array.isArray(data)) {
@@ -18,7 +19,8 @@ const API = {
         return data;
     },
     saveQuote: async (quoteData) => {
-        const endpointUrl = 'https://nordsym.app.n8n.cloud/webhook-test/guldkant-offer-intake-v2';
+        // UPPDATERAD: Använder produktions-endpoint
+        const endpointUrl = 'https://nordsym.app.n8n.cloud/webhook/guldkant-offer-intake-v2';
         console.log(`Saving quote to: ${endpointUrl}`, quoteData);
         const response = await fetch(endpointUrl, {
             method: 'POST',
@@ -33,9 +35,11 @@ const API = {
         return response.json();
     },
     dispatchQuoteEmail: async (quoteId) => {
+        // UPPDATERAD: Använder produktions-endpoint
+        const endpointUrl = 'https://nordsym.app.n8n.cloud/webhook/quote/dispatch';
         const payload = { offerId: quoteId };
         console.log(`Dispatching email for quote. Payload:`, payload);
-        const response = await fetch('https://nordsym.app.n8n.cloud/webhook-test/quote/dispatch', {
+        const response = await fetch(endpointUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -47,38 +51,7 @@ const API = {
         }
         return response.json();
     },
-    // NYTT: Funktion för att radera en offert
-    deleteQuote: async (quoteId) => {
-        const endpointUrl = 'https://nordsym.app.n8n.cloud/webhook-test/quote/delete';
-        console.log(`Deleting quote ${quoteId} at: ${endpointUrl}`);
-        const response = await fetch(endpointUrl, {
-            method: 'POST', // Eller 'DELETE' beroende på backend-konfiguration
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: quoteId }),
-        });
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error('Failed to delete quote. Status:', response.status, 'Body:', errorBody);
-            throw new Error(`Failed to delete quote. Status: ${response.status}`);
-        }
-        return { success: true, id: quoteId };
-    },
-    // NYTT: Funktion för att kopiera en offert
-    copyQuote: async (quoteId) => {
-        const endpointUrl = 'https://nordsym.app.n8n.cloud/webhook-test/quote/copy';
-        console.log(`Copying quote ${quoteId} at: ${endpointUrl}`);
-        const response = await fetch(endpointUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: quoteId }),
-        });
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error('Failed to copy quote. Status:', response.status, 'Body:', errorBody);
-            throw new Error(`Failed to copy quote. Status: ${response.status}`);
-        }
-        return response.json(); // Förväntar sig den nya, kopierade offerten som svar
-    }
+    // BORTTAGEN: deleteQuote och copyQuote är borttagna då de inte finns i produktion.
 };
 
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -97,11 +70,9 @@ const ChevronLeftIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" wid
 const ChevronRightIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M181.66,133.66,107.32,208a8,8,0,0,1-11.32-11.32L164.69,128,96,59.31A8,8,0,0,1,107.32,48l74.34,74.34A8,8,0,0,1,181.66,133.66Z"></path></svg> );
 const CalendarIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M216,32H40A24,24,0,0,0,16,56V200a24,24,0,0,0,24,24H216a24,24,0,0,0,24-24V56A24,24,0,0,0,216,32Zm8,168a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V80H224ZM224,64H32V56a8,8,0,0,1,8-8H216a8,8,0,0,1,8,8Z"></path></svg> );
 const FilePdfIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M216,88H152V24a8,8,0,0,0-8-8H48A16,16,0,0,0,32,32V224a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A8,8,0,0,0,216,88ZM160,80h43.31L160,36.69ZM208,224H48a8,8,0,0,1-8-8V32a8,8,0,0,1,8-8h96v56a16,16,0,0,0,16,16h56v96A8,8,0,0,1,208,224Z"></path></svg> );
-const TrashIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"></path></svg> );
 const FileSearchIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M232.49,215.51,185,168a92.12,92.12,0,1,0-17,17l47.54,47.55a12,12,0,0,0,17-17ZM44,112a68,68,0,1,1,68,68A68.07,68.07,0,0,1,44,112Z"></path></svg> );
 const CaretUpDownIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M181.66,101.66,133.66,53.66a8,8,0,0,0-11.32,0L73.66,101.66A8,8,0,0,0,80,112h96a8,8,0,0,0,6.34-13.66ZM176,144H80a8,8,0,0,0-6.34,13.66l48,48a8,8,0,0,0,11.32,0l48-48A8,8,0,0,0,176,144Z"></path></svg> );
 const XIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path></svg> );
-const CopyIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" {...props}><path d="M216,32H88a8,8,0,0,0,0,16h96V176H56V88a8,8,0,0,0-16,0v88a16,16,0,0,0,16,16H184a16,16,0,0,0,16-16V48A16,16,0,0,0,184,32Z M72,16H184a8,8,0,0,1,0,16H72A16,16,0,0,1,56,16V160a8,8,0,0,1-16,0V16A16,16,0,0,1,56,0H168a8,8,0,0,1,0,16Z"></path></svg> );
 
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // --- HJÄLPFUNKTIONER & KONTEXT ---
@@ -144,7 +115,6 @@ const NordSymSupportHub = ({ isOpen, onClose }) => {
         const form = event.target;
         const formData = new FormData(form);
         try {
-            // UPPDATERAD: Använder den riktiga Formspree-endpointen
             const response = await fetch("https://formspree.io/f/xeokylww", {
                 method: 'POST',
                 body: formData,
@@ -352,7 +322,7 @@ const QuoteCard = React.forwardRef(({ quote, onSelect, isSelected, onStatusChang
 const MicroCalendar = ({ selectedDate, onDateSelect, onClose }) => { const { classes } = useContext(ThemeContext); const [displayDate, setDisplayDate] = useState(selectedDate ? new Date(selectedDate) : new Date()); const calendarRef = useRef(null); useOnClickOutside(calendarRef, onClose); const changeMonth = (amount) => { setDisplayDate(prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1)); }; const grid = useMemo(() => { const year = displayDate.getFullYear(); const month = displayDate.getMonth(); const firstDayOfMonth = new Date(year, month, 1).getDay(); const daysInMonth = new Date(year, month + 1, 0).getDate(); const dayOffset = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1; return [...Array(dayOffset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]; }, [displayDate]); const weekdays = useMemo(() => { const formatter = new Intl.DateTimeFormat('sv-SE', { weekday: 'narrow' }); const startOfWeek = new Date(); startOfWeek.setDate(startOfWeek.getDate() - (startOfWeek.getDay() + 6) % 7); return Array.from({length: 7}, (_, i) => { const day = new Date(startOfWeek); day.setDate(startOfWeek.getDate() + i); return formatter.format(day); }); }, []); const selectedDateStr = selectedDate ? formatDate(selectedDate) : null; return ( <div ref={calendarRef} className={`absolute top-full mt-2 z-20 w-72 p-3 rounded-lg shadow-2xl border ${classes.border} ${classes.cardBg}`}> <div className="flex justify-between items-center mb-3"> <button onClick={() => changeMonth(-1)} className={`p-1 rounded-full hover:${classes.inputBg} ${focusClasses}`}> <ChevronLeftIcon className="w-5 h-5"/> </button> <span className="font-semibold text-md capitalize">{formatDate(displayDate, { month: 'long', year: 'numeric' })}</span> <button onClick={() => changeMonth(1)} className={`p-1 rounded-full hover:${classes.inputBg} ${focusClasses}`}> <ChevronRightIcon className="w-5 h-5"/> </button> </div> <div className="grid grid-cols-7 gap-1 text-center"> {weekdays.map((day, index) => <div key={index} className={`font-bold text-xs uppercase ${classes.textSecondary}`}>{day}</div>)} {grid.map((day, index) => { if (!day) return <div key={`ph-${index}`}></div>; const fullDate = new Date(displayDate.getFullYear(), displayDate.getMonth(), day); const isSelected = formatDate(fullDate) === selectedDateStr; return ( <button key={day} onClick={() => onDateSelect(fullDate)} className={`w-9 h-9 rounded-full text-sm transition-colors ${focusClasses} ${isSelected ? `bg-cyan-500 text-white font-bold` : `hover:${classes.inputBg}`}`}>{day}</button> ); })} </div> </div> ); };
 const CustomTimePicker = ({ isOpen, onClose, value, onChange, classes }) => { const createPaddedArray = (size) => Array.from({ length: size }, (_, i) => i.toString().padStart(2, '0')); const extendedHours = useMemo(() => { const h = createPaddedArray(24); return [...h, ...h, ...h]; }, []); const extendedMinutes = useMemo(() => { const m = createPaddedArray(60); return [...m, ...m, ...m]; }, []); const hourRef = useRef(null); const minuteRef = useRef(null); const scrollTimeout = useRef(null); const ITEM_HEIGHT = 36; const HALF_VISIBLE_ITEMS = 2; useEffect(() => { if (isOpen && value) { const [h, m] = value.split(':'); setTimeout(() => { if (hourRef.current) { const hourIndex = extendedHours.indexOf(h, 24); hourRef.current.scrollTop = hourIndex * ITEM_HEIGHT; } if (minuteRef.current) { const minuteIndex = extendedMinutes.indexOf(m, 60); minuteRef.current.scrollTop = minuteIndex * ITEM_HEIGHT; } }, 50); } }, [isOpen, value, extendedHours, extendedMinutes]); const handleScroll = (ref, sectionSize) => { clearTimeout(scrollTimeout.current); scrollTimeout.current = setTimeout(() => { if (!ref.current) return; const { scrollTop, clientHeight } = ref.current; const totalHeight = ref.current.scrollHeight - clientHeight; if (scrollTop < ITEM_HEIGHT * sectionSize) { ref.current.scrollTop += ITEM_HEIGHT * sectionSize; } else if (scrollTop >= totalHeight - (ITEM_HEIGHT * sectionSize)) { ref.current.scrollTop -= ITEM_HEIGHT * sectionSize; } const nearestIndex = Math.round(ref.current.scrollTop / ITEM_HEIGHT); ref.current.scrollTo({ top: nearestIndex * ITEM_HEIGHT, behavior: 'smooth' }); }, 250); }; const handleSetTime = () => { if (!hourRef.current || !minuteRef.current) return; const hourIndex = Math.round(hourRef.current.scrollTop / ITEM_HEIGHT); const minuteIndex = Math.round(minuteRef.current.scrollTop / ITEM_HEIGHT); onChange(`${extendedHours[hourIndex]}:${extendedMinutes[minuteIndex]}`); onClose(); }; if (!isOpen) return null; const columnPadding = { height: `${ITEM_HEIGHT * HALF_VISIBLE_ITEMS}px` }; return ( <div className={`fixed inset-0 z-[60] flex items-center justify-center p-4 ${classes.modalOverlay}`} onClick={onClose}> <div className={`${classes.cardBg} w-full max-w-xs rounded-xl shadow-2xl p-4 flex flex-col`} onClick={e => e.stopPropagation()}> <div className="relative h-48 flex justify-center items-center text-2xl font-mono gap-2 overflow-hidden"> <div className={`absolute top-1/2 -translate-y-1/2 h-10 w-full rounded-lg border-2 ${classes.accent} ${classes.border} border-opacity-50 pointer-events-none`}></div> <div ref={hourRef} onScroll={() => handleScroll(hourRef, 24)} className="h-full w-1/2 overflow-y-scroll scroll-smooth snap-y snap-mandatory hide-scrollbar"> <div style={columnPadding}></div> {extendedHours.map((h, i) => <div key={`h-${i}`} className="flex items-center justify-center h-9 snap-center">{h}</div>)} <div style={columnPadding}></div> </div> <span>:</span> <div ref={minuteRef} onScroll={() => handleScroll(minuteRef, 60)} className="h-full w-1/2 overflow-y-scroll scroll-smooth snap-y snap-mandatory hide-scrollbar"> <div style={columnPadding}></div> {extendedMinutes.map((m, i) => <div key={`m-${i}`} className="flex items-center justify-center h-9 snap-center">{m}</div>)} <div style={columnPadding}></div> </div> </div> <div className="flex gap-4 mt-4"> <button onClick={onClose} className={`w-full ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-4 py-2 rounded-lg font-semibold transition-colors ${focusClasses}`}>Avbryt</button> <button onClick={handleSetTime} className={`w-full ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-4 py-2 rounded-lg font-semibold transition-colors ${focusClasses}`}>Ställ in</button> </div> </div> <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style> </div> ); };
 
-const EditModal = ({ quote, isOpen, onClose, saveMutation, onCopy, onDelete, sendProposalMutation }) => {
+const EditModal = ({ quote, isOpen, onClose, saveMutation, sendProposalMutation }) => {
     const { classes } = useContext(ThemeContext);
     const [formData, setFormData] = useState(null);
     const [isMicroCalendarOpen, setMicroCalendarOpen] = useState(false);
@@ -361,10 +331,9 @@ const EditModal = ({ quote, isOpen, onClose, saveMutation, onCopy, onDelete, sen
     const [openSections, setOpenSections] = useState({ info: true, menu: true, costs: false, diets: false, internal: false });
     const pdfLoadingStatus = useScriptLoader(['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js']);
     const [displayTotal, setDisplayTotal] = useState(0);
-    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const timeInputClasses = `w-full p-2 rounded ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors cursor-pointer text-center shadow-sm ${focusClasses}`;
 
-    useEffect(() => { if (quote) { const initialData = { ...quote, customCosts: quote.customCosts || [], customDiets: quote.customDiets || [] }; setFormData(initialData); setDisplayTotal(calculateTotal(initialData)); setOpenSections({ info: true, menu: true, costs: false, diets: false, internal: false }); setIsConfirmingDelete(false); } else { setFormData(null); } }, [quote]);
+    useEffect(() => { if (quote) { const initialData = { ...quote, customCosts: quote.customCosts || [], customDiets: quote.customDiets || [] }; setFormData(initialData); setDisplayTotal(calculateTotal(initialData)); setOpenSections({ info: true, menu: true, costs: false, diets: false, internal: false }); } else { setFormData(null); } }, [quote]);
     useEffect(() => { if (formData) { setDisplayTotal(calculateTotal(formData)); } }, [formData]);
 
     const handleChange = e => { const { name, value, type, checked } = e.target; setFormData(p => ({ ...p, [name]: type === 'checkbox' ? checked : value })); };
@@ -383,8 +352,7 @@ const EditModal = ({ quote, isOpen, onClose, saveMutation, onCopy, onDelete, sen
     const handleSendProposal = () => { const quoteToSend = { ...formData, status: 'förslag-skickat', events: [...(formData.events || []), { timestamp: new Date().toISOString(), event: 'Förslag skickat till kund (via portal)' }] }; saveMutation.mutate(quoteToSend, { onSuccess: (data) => { if(data.id) sendProposalMutation.mutate(data.id); onClose(); } }); };
     const handleApproveProposal = () => { const quoteToApprove = { ...formData, status: 'godkänd', events: [...(formData.events || []), { timestamp: new Date().toISOString(), event: 'Förslag godkänt av administratör' }] }; saveMutation.mutate(quoteToApprove, { onSuccess: () => { onClose(); } }); };
     const handleExportPdf = async () => { /* ... oförändrad PDF-logik ... */ };
-    const handleDeleteClick = () => { if (isConfirmingDelete) { onDelete(formData); } else { setIsConfirmingDelete(true); } };
-
+    
     if (!isOpen || !formData) return null;
     const isSaving = saveMutation.isPending || sendProposalMutation.isPending;
     const isNewQuote = !formData.id;
@@ -398,7 +366,6 @@ const EditModal = ({ quote, isOpen, onClose, saveMutation, onCopy, onDelete, sen
                     <button onClick={onClose} className={`p-2 rounded-full hover:bg-red-500/10 ${focusClasses}`}> <XIcon className="w-6 h-6 hover:text-red-500"/> </button> 
                 </header>
                 <main className="p-6 overflow-y-auto flex-grow">
-                    {/* Samma sektioner som tidigare... */}
                     <ModalSection title="Kund & Event Information" isOpen={openSections.info} onToggle={() => setOpenSections(p => ({...p, info: !p.info}))}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Input label="Kundnamn" name="customer" value={formData?.customer || ''} onChange={handleChange} />
@@ -431,17 +398,8 @@ const EditModal = ({ quote, isOpen, onClose, saveMutation, onCopy, onDelete, sen
                     </ModalSection>
                 </main>
                 <footer className={`p-4 border-t ${classes.border} flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0`}>
-                    <div className="flex items-center gap-4">
-                        {!isNewQuote && (
-                            <>
-                                <button onClick={handleDeleteClick} onMouseLeave={() => setIsConfirmingDelete(false)} className={`p-2 rounded-full transition-colors ${isConfirmingDelete ? 'bg-red-500 text-white' : 'text-red-500 hover:bg-red-500/10'} ${focusClasses}`}>
-                                    {isConfirmingDelete ? <CheckCircleIcon/> : <TrashIcon />}
-                                </button>
-                                <button onClick={() => onCopy(formData)} className={`p-2 rounded-full transition-colors text-cyan-500 hover:bg-cyan-500/10 ${focusClasses}`} title="Kopiera Ärende">
-                                    <CopyIcon />
-                                </button>
-                            </>
-                        )}
+                    <div className="flex items-center gap-4 h-10">
+                        {/* BORTTAGEN: Delete och Copy knappar borttagna */}
                     </div>
                     <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                         <p className={`font-bold text-xl ${classes.accent}`}>{displayTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' })}</p>
@@ -469,9 +427,9 @@ const DayCell = ({ day, year, month, quotes, onSelect, classes }) => { const con
 const TactileCalendar = ({ quotes, onSelect }) => { const { classes } = useContext(ThemeContext); const [activeMonthIndex, setActiveMonthIndex] = useState(0); const [scrollAbility, setScrollAbility] = useState({ atStart: false, atEnd: false }); const monthScrollerRef = useRef(null); const monthRefs = useRef({}); const scrollTimeout = useRef(null); const isInitialMount = useRef(true); const months = useMemo(() => Array.from({ length: 12 }, (_, i) => new Date(0, i).toLocaleString('sv-SE', { month: 'long' })), []); const years = useMemo(() => Array.from({length: 5}, (_, i) => new Date().getFullYear() - 2 + i), []); const monthYearCombination = useMemo(() => years.flatMap(year => months.map((month, index) => ({year, month, monthIndex: index}))), [years, months]); const currentDate = useMemo(() => { const activeItem = monthYearCombination[activeMonthIndex]; return activeItem ? new Date(activeItem.year, activeItem.monthIndex, 1) : new Date(); }, [activeMonthIndex, monthYearCombination]); const checkScrollAbility = useCallback(() => { if (!monthScrollerRef.current) return; const { scrollLeft, scrollWidth, clientWidth } = monthScrollerRef.current; setScrollAbility({ atStart: scrollLeft < 10, atEnd: scrollLeft > scrollWidth - clientWidth - 10 }); }, []); useEffect(() => { const initialIndex = monthYearCombination.findIndex(m => m.year === new Date().getFullYear() && m.monthIndex === new Date().getMonth()); if(initialIndex !== -1) setActiveMonthIndex(initialIndex); }, [monthYearCombination]); useEffect(() => { const targetElement = monthRefs.current[activeMonthIndex]; if (targetElement && monthScrollerRef.current) { const behavior = isInitialMount.current ? 'auto' : 'smooth'; monthScrollerRef.current.scrollTo({ left: targetElement.offsetLeft - (monthScrollerRef.current.offsetWidth / 2) + (targetElement.offsetWidth / 2), behavior: behavior }); if (isInitialMount.current) isInitialMount.current = false; } }, [activeMonthIndex]); const handleScroll = () => { checkScrollAbility(); clearTimeout(scrollTimeout.current); scrollTimeout.current = setTimeout(() => { if (!monthScrollerRef.current) return; const container = monthScrollerRef.current; const containerCenter = container.scrollLeft + container.offsetWidth / 2; let closestIndex = -1, smallestDistance = Infinity; for (const key in monthRefs.current) { const el = monthRefs.current[key]; if (el) { const elCenter = el.offsetLeft + el.offsetWidth / 2; const distance = Math.abs(containerCenter - elCenter); if (distance < smallestDistance) { smallestDistance = distance; closestIndex = parseInt(key, 10); } } } if (closestIndex !== -1 && activeMonthIndex !== closestIndex) { setActiveMonthIndex(closestIndex); } else if (closestIndex !== -1) { const targetElement = monthRefs.current[closestIndex]; if(targetElement) container.scrollTo({ left: targetElement.offsetLeft - (container.offsetWidth / 2) + (targetElement.offsetWidth / 2), behavior: 'smooth' }); } }, 200); }; const handleArrowClick = (direction) => { const newIndex = Math.max(0, Math.min(monthYearCombination.length - 1, activeMonthIndex + direction)); setActiveMonthIndex(newIndex); }; const calendarGrid = useMemo(() => { const year = currentDate.getFullYear(); const month = currentDate.getMonth(); const firstDayOfMonth = new Date(year, month, 1).getDay(); const daysInMonth = new Date(year, month + 1, 0).getDate(); const dayOffset = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1; const days = Array.from({ length: daysInMonth }, (_, i) => i + 1); const placeholders = Array(dayOffset).fill(null); const grid = [...placeholders, ...days]; const quotesByDate = quotes.reduce((acc, quote) => { if (quote.eventDate) { const dateStr = formatDate(quote.eventDate); if (!acc[dateStr]) acc[dateStr] = []; acc[dateStr].push(quote); } return acc; }, {}); return { grid, quotesByDate, year, month }; }, [currentDate, quotes]); const { grid, quotesByDate, year, month } = calendarGrid; const weekdays = useMemo(() => Array.from({length: 7}, (_, i) => new Date(2024, 0, i + 1).toLocaleDateString('sv-SE', { weekday: 'long' })), []); return ( <div className={`${classes.cardBg} p-4 rounded-lg shadow-xl border ${classes.border} overflow-hidden max-w-4xl mx-auto`}> <div className="relative mb-4 flex items-center"> <button onClick={() => handleArrowClick(-1)} className={`absolute left-0 z-10 p-2 rounded-full bg-black/10 hover:bg-black/20 transition-all duration-300 ${classes.text} ${scrollAbility.atStart ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${focusClasses}`} aria-label="Föregående månad"> <ChevronLeftIcon /> </button> <div ref={monthScrollerRef} onScroll={handleScroll} className="flex overflow-x-auto scroll-smooth snap-x snap-mandatory py-4 hide-scrollbar"> {monthYearCombination.map(({year, month, monthIndex}, index) => ( <div key={`${year}-${monthIndex}`} ref={el => monthRefs.current[index] = el} className={`flex-shrink-0 snap-center px-6 py-2 cursor-pointer transition-all duration-300 select-none ${ activeMonthIndex === index ? `text-xl font-bold ${classes.accent}` : `text-lg ${classes.textSecondary} opacity-60 scale-90` }`}> <span className="capitalize">{month}</span> <span className={`${classes.textSecondary} text-base`}>{year}</span> </div> ))} </div> <button onClick={() => handleArrowClick(1)} className={`absolute right-0 z-10 p-2 rounded-full bg-black/10 hover:bg-black/20 transition-all duration-300 ${classes.text} ${scrollAbility.atEnd ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${focusClasses}`} aria-label="Nästa månad"> <ChevronRightIcon /> </button> </div> <div className="grid grid-cols-7 gap-1 text-center"> {weekdays.map((day, i) => <div key={i} className={`font-bold text-sm capitalize ${classes.textSecondary}`}>{day.substring(0, 3)}</div>)} {grid.map((day, index) => ( <DayCell key={day || `ph-${index}`} day={day} year={year} month={month} quotes={quotesByDate} onSelect={onSelect} classes={classes}/> ))} </div> <style>{`.hide-scrollbar::-webkit-scrollbar { display: none; } .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style> </div> ); };
 const QuotesControls = ({ onFilterChange, onSearch, onNewQuote, activeFilter, searchRef, viewMode, setViewMode, summary }) => { const { classes } = useContext(ThemeContext); const filters = ["Alla", "Utkast", "Förslag Skickat", "Godkänd", "Genomförd", "Arkiv"]; return ( <div className="mb-4"> <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-4"> <input ref={searchRef} type="text" placeholder="Sök på kundnamn, ID..." onChange={e => onSearch(e.target.value)} className={`w-full md:w-2/5 p-2 rounded ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${focusClasses}`} /> <div className="flex gap-2"> <button onClick={() => setViewMode('cards')} className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${focusClasses} ${viewMode === 'cards' ? classes.filterActive : classes.filterInactive}`}>Kortvy</button> <button onClick={() => setViewMode('calendar')} className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${focusClasses} ${viewMode === 'calendar' ? classes.filterActive : classes.filterInactive}`}>Kalendervy</button> <button onClick={onNewQuote} className={`${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow-sm ${focusClasses}`}>Nytt Ärende</button> </div> </div> <div className={`p-3 mb-4 rounded-lg border ${classes.border} ${classes.inputBg}`}> <p className="text-sm font-semibold">{summary.text}</p> </div> <div className="flex flex-wrap gap-2"> {filters.map(f => <button key={f} onClick={() => onFilterChange(f.toLowerCase().replace(' ', '-'))} className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${focusClasses} ${activeFilter === f.toLowerCase().replace(' ', '-') ? classes.filterActive : classes.filterInactive}`}> {f}</button>)} </div> </div> ); };
 const AnalyticsSummaryCard = ({ title, value, unit, icon, classes }) => ( <div className={`${classes.cardBg} p-4 rounded-lg shadow-md flex items-center gap-4 border ${classes.border} group transition-all duration-300 hover:shadow-xl hover:ring-2 hover:ring-cyan-500/80`}> <div className={`p-3 rounded-full ${classes.buttonSecondaryBg} transition-all duration-300 group-hover:ring-2 group-hover:ring-cyan-500/80`}> <div className={`text-2xl ${classes.accent} transition-transform duration-300 group-hover:scale-110`}>{icon}</div> </div> <div> <h3 className={`text-sm font-medium ${classes.textSecondary}`}>{title}</h3> <p className="text-2xl font-bold">{value} <span className="text-lg font-medium">{unit || ''}</span></p> </div> </div> );
-const ActionableQuotesWidget = ({ quotes, onSelect, classes }) => { const actionItems = useMemo(() => { return quotes.filter(q => q.status === 'utkast' || q.status === 'förslag-skickat').sort((a,b) => new Date(a.events[0]?.timestamp) - new Date(b.events[0]?.timestamp)); }, [quotes]); return ( <div className={`p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} border-l-4 border-yellow-500 flex flex-col h-full`}> <h3 className="font-bold mb-3 flex items-center gap-2 flex-shrink-0"> <AlertCircleIcon className="text-yellow-500"/> <span>Ärenden som kräver åtgärd</span> </h3> <div className="flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar"> {actionItems.length === 0 ? ( <div className="text-center p-4 text-sm flex flex-col items-center justify-center h-full"> <CheckCircleIcon className={`w-8 h-8 ${classes.textSecondary} text-green-500`} /> <p className={`mt-2 ${classes.textSecondary}`}>Bra jobbat! Inga ärenden kräver åtgärd.</p> </div> ) : ( actionItems.map(q => ( <div key={q.id} onClick={() => onSelect(q)} className={`p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${focusClasses}`}> <p className="font-semibold text-sm">{q.customer}</p> <p className={`text-xs ${classes.textSecondary}`}>Status: {statusTextMap[q.status]}</p> </div> )) )} </div> </div> ); };
-const FollowUpWidget = ({ quotes, onSelect, classes }) => { const followUpItems = useMemo(() => { return quotes.filter(q => q.status === 'genomförd').slice(0, 5); }, [quotes]); return ( <div className={`p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} border-l-4 border-blue-500 flex flex-col h-full`}> <h3 className="font-bold mb-3 flex items-center gap-2 flex-shrink-0"> <InvoiceIcon className="text-blue-500"/> <span>Uppföljning & Fakturering</span> </h3> <div className="flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar"> {followUpItems.length === 0 ? ( <div className="text-center p-4 text-sm flex flex-col items-center justify-center h-full"> <CheckCircleIcon className={`w-8 h-8 ${classes.textSecondary} text-green-500`} /> <p className={`mt-2 ${classes.textSecondary}`}>Inga genomförda event väntar på fakturering.</p> </div> ) : ( followUpItems.map(q => ( <div key={q.id} onClick={() => onSelect(q)} className={`p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${focusClasses}`}> <p className="font-semibold text-sm">{q.customer}</p> <p className={`text-xs ${classes.textSecondary}`}>Genomförd: {formatDate(q.eventDate)}</p> </div> )) )} </div> </div> ); };
-const UpcomingEventsWidget = ({ quotes, onSelect, classes }) => { const upcomingEvents = useMemo(() => { const now = new Date(); now.setHours(0,0,0,0); return quotes.filter(q => ['godkänd', 'betald'].includes(q.status) && new Date(q.eventDate) >= now).sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate)).slice(0, 5); }, [quotes]); return ( <div className={`p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} border-l-4 border-green-500 flex flex-col h-full`}> <h3 className="font-bold mb-3 flex items-center gap-2 flex-shrink-0"> <CalendarCheckIcon className="text-green-500"/> <span>Kommande Event</span> </h3> <div className="flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar"> {upcomingEvents.length === 0 ? ( <div className="text-center p-4 text-sm flex flex-col items-center justify-center h-full"> <CheckCircleIcon className={`w-8 h-8 ${classes.textSecondary} text-green-500`} /> <p className={`mt-2 ${classes.textSecondary}`}>Inga kommande event inbokade.</p> </div> ) : ( upcomingEvents.map(q => ( <div key={q.id} onClick={() => onSelect(q)} className={`p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${focusClasses}`}> <div className="flex justify-between items-center"> <p className="font-semibold text-sm">{q.customer}</p> {q.status === 'betald' && <span className="text-xs font-bold text-purple-400">BETALD</span>} </div> <p className={`text-xs ${classes.textSecondary}`}>Eventdatum: {formatDate(q.eventDate)}</p> </div> )) )} </div> </div> ); };
+const ActionableQuotesWidget = ({ quotes, onSelect, classes }) => { const actionItems = useMemo(() => { if (!Array.isArray(quotes)) return []; return quotes.filter(q => q.status === 'utkast' || q.status === 'förslag-skickat').sort((a,b) => new Date(a.events[0]?.timestamp) - new Date(b.events[0]?.timestamp)); }, [quotes]); return ( <div className={`p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} border-l-4 border-yellow-500 flex flex-col h-full`}> <h3 className="font-bold mb-3 flex items-center gap-2 flex-shrink-0"> <AlertCircleIcon className="text-yellow-500"/> <span>Ärenden som kräver åtgärd</span> </h3> <div className="flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar"> {actionItems.length === 0 ? ( <div className="text-center p-4 text-sm flex flex-col items-center justify-center h-full"> <CheckCircleIcon className={`w-8 h-8 ${classes.textSecondary} text-green-500`} /> <p className={`mt-2 ${classes.textSecondary}`}>Bra jobbat! Inga ärenden kräver åtgärd.</p> </div> ) : ( actionItems.map(q => ( <div key={q.id} onClick={() => onSelect(q)} className={`p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${focusClasses}`}> <p className="font-semibold text-sm">{q.customer}</p> <p className={`text-xs ${classes.textSecondary}`}>Status: {statusTextMap[q.status]}</p> </div> )) )} </div> </div> ); };
+const FollowUpWidget = ({ quotes, onSelect, classes }) => { const followUpItems = useMemo(() => { if (!Array.isArray(quotes)) return []; return quotes.filter(q => q.status === 'genomförd').slice(0, 5); }, [quotes]); return ( <div className={`p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} border-l-4 border-blue-500 flex flex-col h-full`}> <h3 className="font-bold mb-3 flex items-center gap-2 flex-shrink-0"> <InvoiceIcon className="text-blue-500"/> <span>Uppföljning & Fakturering</span> </h3> <div className="flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar"> {followUpItems.length === 0 ? ( <div className="text-center p-4 text-sm flex flex-col items-center justify-center h-full"> <CheckCircleIcon className={`w-8 h-8 ${classes.textSecondary} text-green-500`} /> <p className={`mt-2 ${classes.textSecondary}`}>Inga genomförda event väntar på fakturering.</p> </div> ) : ( followUpItems.map(q => ( <div key={q.id} onClick={() => onSelect(q)} className={`p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${focusClasses}`}> <p className="font-semibold text-sm">{q.customer}</p> <p className={`text-xs ${classes.textSecondary}`}>Genomförd: {formatDate(q.eventDate)}</p> </div> )) )} </div> </div> ); };
+const UpcomingEventsWidget = ({ quotes, onSelect, classes }) => { const upcomingEvents = useMemo(() => { if (!Array.isArray(quotes)) return []; const now = new Date(); now.setHours(0,0,0,0); return quotes.filter(q => ['godkänd', 'betald'].includes(q.status) && new Date(q.eventDate) >= now).sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate)).slice(0, 5); }, [quotes]); return ( <div className={`p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} border-l-4 border-green-500 flex flex-col h-full`}> <h3 className="font-bold mb-3 flex items-center gap-2 flex-shrink-0"> <CalendarCheckIcon className="text-green-500"/> <span>Kommande Event</span> </h3> <div className="flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar"> {upcomingEvents.length === 0 ? ( <div className="text-center p-4 text-sm flex flex-col items-center justify-center h-full"> <CheckCircleIcon className={`w-8 h-8 ${classes.textSecondary} text-green-500`} /> <p className={`mt-2 ${classes.textSecondary}`}>Inga kommande event inbokade.</p> </div> ) : ( upcomingEvents.map(q => ( <div key={q.id} onClick={() => onSelect(q)} className={`p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${focusClasses}`}> <div className="flex justify-between items-center"> <p className="font-semibold text-sm">{q.customer}</p> {q.status === 'betald' && <span className="text-xs font-bold text-purple-400">BETALD</span>} </div> <p className={`text-xs ${classes.textSecondary}`}>Eventdatum: {formatDate(q.eventDate)}</p> </div> )) )} </div> </div> ); };
 
 const QuotesDashboard = ({ allQuotes = [], isPending, error, onSelectQuote, onNewQuote, onFilterChange, onSearch, activeFilter, searchRef, onStatusChange }) => {
     const { classes } = useContext(ThemeContext);
@@ -479,14 +437,14 @@ const QuotesDashboard = ({ allQuotes = [], isPending, error, onSelectQuote, onNe
     const [isFocusMode, setIsFocusMode] = useState(false);
     
     const analytics = useMemo(() => {
-        if (!allQuotes) return { totalQuoteValue: 0, averageQuoteValue: 0, activeQuotesCount: 0 };
+        if (!Array.isArray(allQuotes)) return { totalQuoteValue: 0, averageQuoteValue: 0, activeQuotesCount: 0 };
         const activeQuotes = allQuotes.filter(q => !['arkiverad', 'betald', 'förlorad'].includes(q.status));
         const totalValue = activeQuotes.reduce((sum, q) => sum + (q.total || 0), 0);
         return { totalQuoteValue: totalValue, averageQuoteValue: activeQuotes.length ? (totalValue / activeQuotes.length) : 0, activeQuotesCount: activeQuotes.length };
     }, [allQuotes]);
     
     const displayQuotes = useMemo(() => {
-        if (!allQuotes) return [];
+        if (!Array.isArray(allQuotes)) return [];
         return allQuotes;
     }, [allQuotes]);
 
@@ -653,7 +611,6 @@ function App() {
         mutationFn: API.saveQuote,
         onSuccess: (savedQuote) => {
             showToast(`Ärende ${savedQuote.id} har sparats.`, 'success');
-            // UPPDATERAD: Uppdatera den valda offerten med data från servern (inklusive det nya ID:t)
             setSelectedQuote(savedQuote);
             queryClient.invalidateQueries({ queryKey: ['quotes'] });
         },
@@ -668,36 +625,6 @@ function App() {
         onError: (err) => showToast(`Kunde inte skicka offerten: ${err.message}`, 'error')
     });
 
-    const deleteQuoteMutation = useMutation({
-        mutationFn: API.deleteQuote,
-        onMutate: async (quoteId) => {
-            await queryClient.cancelQueries({ queryKey: ['quotes'] });
-            const previousQuotes = queryClient.getQueryData(['quotes']);
-            queryClient.setQueryData(['quotes'], (old = []) => old.filter(q => q.id !== quoteId));
-            return { previousQuotes };
-        },
-        onSuccess: (data) => {
-            showToast(`Ärende ${data.id} har raderats.`, 'success');
-            handleCloseModal();
-        },
-        onError: (err, quoteId, context) => {
-            queryClient.setQueryData(['quotes'], context.previousQuotes);
-            showToast(`Kunde inte radera ärendet: ${err.message}`, 'error');
-        },
-    });
-
-    const copyQuoteMutation = useMutation({
-        mutationFn: API.copyQuote,
-        onSuccess: (newQuote) => {
-            showToast(`Ärende ${newQuote.id} har skapats från en kopia.`, 'success');
-            queryClient.invalidateQueries({ queryKey: ['quotes'] });
-            handleCloseModal();
-        },
-        onError: (err) => {
-            showToast(`Kunde inte kopiera ärendet: ${err.message}`, 'error');
-        },
-    });
-
     const handleLogin = () => setIsLoggedIn(true);
     const handleSelectQuote = (quote) => setSelectedQuote(quote);
     const handleCloseModal = () => setSelectedQuote(null);
@@ -709,7 +636,6 @@ function App() {
     };
 
     const handleNewQuote = () => {
-        // UPPDATERAD: Skapar en mall utan ID. ID:t genereras av backend vid första sparningen.
         const newQuoteTemplate = {
             status: 'utkast',
             customer: 'Nytt ärende',
@@ -718,27 +644,18 @@ function App() {
             customCosts: [],
             customDiets: [],
             customerType: 'privat',
-            guestCount: 10 // Sätter ett standardvärde
+            guestCount: 10
         };
         setSelectedQuote(newQuoteTemplate);
     };
 
-    const handleDeleteQuote = (quote) => {
-        if (quote && quote.id) {
-            deleteQuoteMutation.mutate(quote.id);
-        }
-    };
-
-    const handleCopyQuote = (quote) => {
-        if (quote && quote.id) {
-            copyQuoteMutation.mutate(quote.id);
-        }
-    };
-
     const sortedAndFilteredQuotes = useMemo(() => {
-        if (!quotesData) return [];
+        // FIX #1: Säkerställ att quotesData är en array innan filtrering
+        if (!Array.isArray(quotesData)) return [];
+        
         const arkivStatus = ['betald', 'förlorad', 'arkiverad'];
         const aktivaStatus = ['utkast', 'förslag-skickat', 'godkänd', 'genomförd'];
+        
         return [...quotesData].filter(q => {
             const term = searchTerm.toLowerCase();
             const searchMatch = term === '' || q.customer?.toLowerCase().includes(term) || q.id?.toLowerCase().includes(term);
@@ -747,7 +664,11 @@ function App() {
             else if (filter === 'arkiv') statusMatch = arkivStatus.includes(q.status);
             else statusMatch = q.status === filter;
             return statusMatch && searchMatch;
-        }).sort((a, b) => new Date(b.events[0]?.timestamp) - new Date(a.events[0]?.timestamp)); // Sortera med nyaste först
+        }).sort((a, b) => {
+            const dateA = a.events?.[0]?.timestamp ? new Date(a.events[0].timestamp) : 0;
+            const dateB = b.events?.[0]?.timestamp ? new Date(b.events[0].timestamp) : 0;
+            return dateB - dateA;
+        });
     }, [quotesData, filter, searchTerm]);
 
     return (
@@ -785,8 +706,6 @@ function App() {
                             onClose={handleCloseModal} 
                             saveMutation={saveQuoteMutation}
                             sendProposalMutation={dispatchEmailMutation}
-                            onDelete={handleDeleteQuote}
-                            onCopy={handleCopyQuote}
                          />
                         <NordSymSupportHub isOpen={isHubOpen} onClose={() => setIsHubOpen(false)} />
                         <Toast toast={toast} />
