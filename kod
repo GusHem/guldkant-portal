@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="sv" class="light">
+<head>
+    <meta charset="UTF8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guldkant Portalen</title>
+    
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PDF Generation Libraries via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+    <!-- Custom Styles & Animations -->
+    <style>
+        /* Anpassad font och grundläggande kroppsstilar */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-size: 16px; /* Förhindrar iOS-zoom på input-fokus */
+        }
+
+        /* Dölj scrollbars för en renare design i specifika element */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Keyframe-animationer för UI-element */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes pulseGlow { 
+            0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 175, 0.4); } 
+            50% { box-shadow: 0 0 12px 6px rgba(22, 163, 175, 0), 0 0 8px 3px rgba(22, 163, 175, 0.4); } 
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Klasser för att applicera animationer */
+        .animate-fade-in-fast { animation: fadeIn 0.3s ease-out forwards; }
+        .animate-fade-out-fast { animation: fadeOut 0.3s ease-out forwards; }
+        .animate-fade-in-scale { animation: fadeInScale 0.5s ease-out forwards; }
+        .animate-pulse-glow { animation: pulseGlow 2.5s infinite; }
+        .animate-spin-fast { animation: spin 0.8s linear infinite; }
+        
+        /* Stilar för tidväljare */
+        .time-picker-column {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+            scroll-snap-type: y mandatory;
+        }
+        .time-picker-column::-webkit-scrollbar {
+            display: none; /* Chrome, Safari and Opera */
+        }
+        .time-picker-column > div {
+            scroll-snap-align: center;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <!-- Applikationens rot-element. Allt innehåll renderas här. -->
+    <div id="app-root"></div>
+
+    <!-- Huvudskript för hela applikationen -->
+    <script type="module">
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- ATOMSMED KERN: GLOBAL STATE & RENDERINGS-MOTOR ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        const appRoot = document.getElementById('app-root');
+
+        const state = {
+            theme: 'light',
+            language: 'sv',
+            isLoggedIn: false,
+            isLoading: true,
+            isSaving: false,
+            quotes: [],
+            selectedQuoteId: null,
+            activeView: 'quotes',
+            filter: 'prioriterade',
+            searchTerm: '',
+            toast: null,
+            lastDeleted: null,
+            confirmationState: { isOpen: false },
+            isHubOpen: false,
+            isFocusMode: false,
+            viewMode: 'cards',
+            formData: null,
+            openSections: { info: true, menu: true, costs: true, diets: true, internal: true, system: false },
+            isMicroCalendarOpen: false,
+            microCalendarDate: new Date(),
+            isTimePickerOpen: false,
+            timePickerTarget: null,
+            calendarViewDate: new Date(),
+            displayLimit: 12,
+        };
+
+        function setState(newState, options = { render: 'full' }) {
+            Object.assign(state, newState);
+            if (options.render === 'full') {
+                renderApp();
+            }
+        }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- I18N LAYER ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        const texts = {
+            sv: {
+                'login.welcome': 'Välkommen till Guldkant Portalen',
+                'login.prompt': 'Vänligen ange din fras för att fortsätta.',
+                'login.secret_phrase': 'Hemlig fras',
+                'login.button': 'Logga in',
+                'login.error': 'Felaktig fras. Försök igen.',
+                'nav.quotes': 'Offerter',
+                'nav.ai_log': 'AI-Logg',
+                'nav.analytics': 'Analytics',
+                'dashboard.title': 'Dashboard',
+                'dashboard.subtitle': 'En proaktiv översikt av din cateringverksamhet.',
+                'controls.search_placeholder': 'Sök på kundnamn, ID...',
+                'controls.card_view': 'Kortvy',
+                'controls.calendar_view': 'Kalendervy',
+                'controls.new_quote': 'Nytt Ärende',
+                'controls.prioritized': 'Prioriterade',
+                'controls.active': 'Aktiva',
+                'controls.load_more': 'Ladda fler',
+                'status.utkast': 'Utkast',
+                'status.förslag-skickat': 'Förslag Skickat',
+                'status.godkänd': 'Godkänd',
+                'status.genomförd': 'Genomförd',
+                'status.betald': 'Betald',
+                'status.förlorad': 'Förlorad Affär',
+                'status.arkiverad': 'Arkiverad',
+                'quote.event_date': 'Eventdatum',
+                'quote.total': 'Totalt',
+                'quote.nameless': 'Namnlös Offert',
+                'modal.edit_title': 'Redigera Ärende',
+                'toast.saved': 'Ärende {id} har sparats.',
+                'toast.deleted': 'Ärende {id} har raderats.',
+                'toast.save_failed': 'Sparning av ärende {id} misslyckades.',
+                'toast.status_changed': 'Status ändrad till "{status}"',
+                'toast.copied': 'Ärendet kopierades!',
+                'toast.undo': 'Ångra',
+                'toast.retry': 'Försök igen',
+                'hub.title': 'NordSym Support Hub',
+                'hub.description': 'Direktkontakt för support och frågor.',
+                'hub.email': 'E-post',
+                'hub.phone': 'Telefon',
+                'hub.message_placeholder': 'Ditt meddelande här...',
+                'hub.send': 'Skicka Meddelande',
+                'hub.copied': 'Kopierad!',
+            },
+        };
+
+        function t(key, vars = {}) {
+            let text = texts[state.language][key] || key;
+            for (const [varKey, varValue] of Object.entries(vars)) {
+                text = text.replace(`{${varKey}}`, varValue);
+            }
+            return text;
+        }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- DATA SERVICE ABSTRACTION LAYER ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+        const N8N_BASE_URL = 'https://nordsym.app.n8n.cloud/webhook/';
+        const N8N_ENDPOINTS = {
+            SAVE_QUOTE: 'guldkant-offer-intake-v2',
+            GET_QUOTES: 'quotes',
+            SEND_EMAIL: 'quote/dispatch',
+        };
+
+        class DataService {
+            constructor() { this.adapter = new N8nApiAdapter(); }
+            async getQuotes() { const response = await this.adapter.get(N8N_ENDPOINTS.GET_QUOTES); return response.quotes.map(transformN8nQuoteToPortalQuote); }
+            async saveQuote(quoteData) { 
+                const n8nPayload = transformPortalQuoteToN8nQuote(quoteData); 
+                console.log('🔬 PRE-FLIGHT PAYLOAD VALIDATION:', JSON.stringify(n8nPayload, null, 2));
+                return this.adapter.post(N8N_ENDPOINTS.SAVE_QUOTE, n8nPayload); 
+            }
+            async sendQuoteEmail(emailData) { return this.adapter.post(N8N_ENDPOINTS.SEND_EMAIL, emailData); }
+        }
+
+        class N8nApiAdapter {
+            async get(endpoint) {
+                const response = await fetch(`${N8N_BASE_URL}${endpoint}`);
+                if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+                return response.json();
+            }
+            async post(endpoint, data) {
+                try {
+                    const response = await fetch(`${N8N_BASE_URL}${endpoint}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(data),
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        console.error("HTTP Error:", response.status, response.statusText, "Body:", errorBody);
+                        throw new Error(`Network response was not ok: ${response.statusText}`);
+                    }
+
+                    const responseText = await response.text();
+                    if (responseText.trim() === '') {
+                        return { status: 'success', message: 'Operation successful with empty response.' };
+                    }
+                    const result = JSON.parse(responseText);
+                    console.log('Success:', result);
+                    return result;
+
+                } catch (error) {
+                    console.error('Network error:', error);
+                    throw error;
+                }
+            }
+        }
+        
+        function safeJsonParse(jsonString, defaultValue) {
+            if (!jsonString) return defaultValue;
+            if (typeof jsonString === 'object') return jsonString;
+            if (typeof jsonString !== 'string' || !jsonString.trim()) return defaultValue;
+            try {
+                const parsed = JSON.parse(jsonString);
+                return parsed !== null ? parsed : defaultValue;
+            } catch (e) {
+                console.warn("JSON Parse Warning:", jsonString, e);
+                return defaultValue;
+            }
+        }
+
+        function normalizeStatus(statusString) {
+            if (!statusString || typeof statusString !== 'string') return 'utkast';
+            const normalized = statusString.toLowerCase().trim().replace(/\s+/g, '-');
+            const statusMap = { 'förslag-skickat': 'förslag-skickat', 'godkänd': 'godkänd', 'genomförd': 'genomförd', 'betald': 'betald', 'förlorad': 'förlorad', 'förlorad-affär': 'förlorad', 'arkiverad': 'arkiverad', 'utkast': 'utkast' };
+            return statusMap[normalized] || 'utkast';
+        }
+
+        function transformN8nQuoteToPortalQuote(n8nQuote) {
+            const recordId = n8nQuote.recordId || n8nQuote.recordID || null;
+            
+            const standardDiets = {
+                vegetarian: { selected: n8nQuote.hasVegetarian || false, count: n8nQuote.numVegetarian || '' },
+                vegan: { selected: n8nQuote.hasVegan || false, count: n8nQuote.numVegan || '' },
+                glutenFree: { selected: n8nQuote.hasGlutenFree || false, count: n8nQuote.numGlutenFree || '' },
+                lactoseFree: { selected: n8nQuote.hasLactoseFree || false, count: n8nQuote.numLactoseFree || '' },
+                nutAllergy: { selected: n8nQuote.hasNutAllergy || false, count: n8nQuote.numNutAllergy || '' },
+            };
+
+            const quoteObject = {
+                // KRITISK FIX: Letar efter alla kända varianter av ID och namn.
+                id: n8nQuote.offertId || n8nQuote.OffertID || `GULDKANT-${Date.now()}`,
+                recordId: recordId,
+                status: normalizeStatus(n8nQuote.status),
+                customer: n8nQuote.customerName || n8nQuote['Customer Name'] || n8nQuote.kundNamn || '',
+                customerType: n8nQuote.customerType || 'privat',
+                contactPerson: n8nQuote.contactPerson || '',
+                customerIdNumber: n8nQuote.customerIdNumber || '',
+                contactEmail: n8nQuote.contactEmail || '',
+                contactPhone: n8nQuote.contactPhone || '',
+                address: n8nQuote.address || '',
+                guestCount: Number(n8nQuote.guestCount) || 0,
+                eventDate: n8nQuote.eventDate ? new Date(n8nQuote.eventDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                eventStartTime: n8nQuote.eventStartTime || "17:00",
+                eventEndTime: n8nQuote.eventEndTime || "01:00",
+                eventLocation: n8nQuote.eventLocation || '',
+                eventType: n8nQuote.eventType || '',
+                pricePerGuest: Number(n8nQuote.pricePerGuest) || 0,
+                menuDescription: n8nQuote.menuDescription || '',
+                customerRequests: n8nQuote.customerRequests || '',
+                numChefs: Number(n8nQuote.numChefs) || 0,
+                chefCost: Number(n8nQuote.chefCost) || 0,
+                numServingStaff: Number(n8nQuote.numServingStaff) || 0,
+                servingStaffCost: Number(n8nQuote.servingStaffCost) || 0,
+                discountAmount: Number(n8nQuote.discountAmount) || 0,
+                customCosts: safeJsonParse(n8nQuote.customCosts, []),
+                standardDiets: standardDiets,
+                customDiets: safeJsonParse(n8nQuote.customDiets, []),
+                events: safeJsonParse(n8nQuote.events, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
+                internalComment: n8nQuote.internalComment || '',
+                sentDate: n8nQuote.skickadDatum ? formatDate(n8nQuote.skickadDatum) : null,
+                aiRawLog: n8nQuote.fullConversationLog || '',
+                total: n8nQuote.Totalpris || n8nQuote.total || 0
+            };
+            
+            if (!n8nQuote.Totalpris && !n8nQuote.total) {
+                const priceBreakdown = calculateTotal(quoteObject);
+                quoteObject.total = priceBreakdown.finalTotal;
+            }
+
+            return quoteObject;
+        }
+
+        function transformPortalQuoteToN8nQuote(portalQuote) {
+            const priceBreakdown = calculateTotal(portalQuote);
+            
+            let finalOffertId = portalQuote.id;
+            if (finalOffertId && finalOffertId.startsWith('GK-')) {
+                finalOffertId = finalOffertId.replace('GK-', 'GULDKANT-');
+            }
+
+            const payload = {
+                recordId: portalQuote.recordId || null,
+                offertId: finalOffertId,
+                status: portalQuote.status,
+                customerName: portalQuote.customer,
+                customerType: portalQuote.customerType,
+                contactPerson: portalQuote.contactPerson,
+                customerIdNumber: portalQuote.customerIdNumber,
+                contactEmail: portalQuote.contactEmail,
+                contactPhone: portalQuote.contactPhone,
+                address: portalQuote.address,
+                guestCount: Number(portalQuote.guestCount) || 0,
+                eventDate: portalQuote.eventDate,
+                eventStartTime: portalQuote.eventStartTime,
+                eventEndTime: portalQuote.eventEndTime,
+                eventLocation: portalQuote.eventLocation,
+                eventType: portalQuote.eventType,
+                pricePerGuest: Number(portalQuote.pricePerGuest) || 0,
+                menuDescription: portalQuote.menuDescription,
+                customerRequests: portalQuote.customerRequests,
+                numChefs: Number(portalQuote.numChefs) || 0,
+                chefCost: Number(portalQuote.chefCost) || 0,
+                numServingStaff: Number(portalQuote.numServingStaff) || 0,
+                servingStaffCost: Number(portalQuote.servingStaffCost) || 0,
+                discountAmount: Number(portalQuote.discountAmount) || 0,
+                total: priceBreakdown.finalTotal,
+                internalComment: portalQuote.internalComment,
+                customCosts: JSON.stringify(portalQuote.customCosts || []),
+                customDiets: JSON.stringify(portalQuote.customDiets || []),
+                events: JSON.stringify(portalQuote.events || []),
+                hasVegetarian: portalQuote.standardDiets?.vegetarian?.selected || false,
+                numVegetarian: Number(portalQuote.standardDiets?.vegetarian?.count) || 0,
+                hasVegan: portalQuote.standardDiets?.vegan?.selected || false,
+                numVegan: Number(portalQuote.standardDiets?.vegan?.count) || 0,
+                hasGlutenFree: portalQuote.standardDiets?.glutenFree?.selected || false,
+                numGlutenFree: Number(portalQuote.standardDiets?.glutenFree?.count) || 0,
+                hasLactoseFree: portalQuote.standardDiets?.lactoseFree?.selected || false,
+                numLactoseFree: Number(portalQuote.standardDiets?.lactoseFree?.count) || 0,
+                hasNutAllergy: portalQuote.standardDiets?.nutAllergy?.selected || false,
+                numNutAllergy: Number(portalQuote.standardDiets?.nutAllergy?.count) || 0,
+            };
+            return payload;
+        }
+
+        const dataService = new DataService();
+        
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- TEMA & HJÄLPFUNKTIONER ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        const themes = {
+            dark: { htmlClass: 'dark', bg: 'bg-gray-900', cardBg: 'bg-gray-800', text: 'text-gray-200', textSecondary: 'text-gray-400', accent: 'text-cyan-400', border: 'border-gray-700', inputBg: 'bg-gray-700', buttonPrimaryBg: 'bg-cyan-500', buttonPrimaryText: 'text-gray-900', buttonPrimaryHover: 'hover:bg-cyan-400', buttonSecondaryBg: 'bg-gray-700', buttonSecondaryText: 'text-gray-200', buttonSecondaryHover: 'hover:bg-gray-600', modalOverlay: 'bg-black/80 backdrop-blur-md', navActive: 'bg-cyan-500/10 text-cyan-400 border-cyan-500', navInactive: 'text-gray-400 border-transparent hover:bg-gray-700/50', filterActive: 'bg-cyan-500 text-gray-900', filterInactive: 'bg-gray-700 hover:bg-gray-600', ringOffset: 'ring-offset-gray-900', focus: 'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 ring-offset-gray-900' },
+            light: { htmlClass: 'light', bg: 'bg-slate-50', cardBg: 'bg-white', text: 'text-slate-800', textSecondary: 'text-slate-500', accent: 'text-cyan-600', border: 'border-slate-200', inputBg: 'bg-slate-100', buttonPrimaryBg: 'bg-cyan-500', buttonPrimaryText: 'text-white', buttonPrimaryHover: 'hover:bg-cyan-600', buttonSecondaryBg: 'bg-slate-200', buttonSecondaryText: 'text-slate-800', buttonSecondaryHover: 'hover:bg-slate-300', modalOverlay: 'bg-slate-900/80 backdrop-blur-md', navActive: 'bg-cyan-500/10 text-cyan-600 border-cyan-500', navInactive: 'text-slate-600 border-transparent hover:bg-slate-200', filterActive: 'bg-cyan-500 text-white', filterInactive: 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-200', ringOffset: 'ring-offset-slate-50', focus: 'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 ring-offset-slate-50' }
+        };
+        const formatDate = (dateString, options = { year: 'numeric', month: '2-digit', day: '2-digit' }) => { if (!dateString) return ''; const date = new Date(dateString); return isNaN(date) ? '' : date.toLocaleDateString('sv-SE', options); };
+        const formatTimestamp = (timestamp) => new Date(timestamp).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+        
+        const calculateTotal = (quote) => {
+            if (!quote) return { subTotal: 0, vat: 0, finalTotal: 0 };
+            const pricePerGuest = Number(quote.pricePerGuest) || 0;
+            const guestCount = Number(quote.guestCount) || 0;
+            const basePrice = pricePerGuest * guestCount;
+            const chefCost = Number(quote.chefCost) || 0;
+            const servingStaffCost = Number(quote.servingStaffCost) || 0;
+            const staffPrice = chefCost + servingStaffCost;
+            const customPrice = (quote.customCosts || []).reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
+            const discount = Number(quote.discountAmount) || 0;
+            const subTotal = basePrice + staffPrice + customPrice - discount;
+            const vat = subTotal * 0.12;
+            const finalTotal = subTotal + vat;
+            return { subTotal, vat, finalTotal };
+        };
+
+        function createElement(tag, classList = [], children = []) { const el = document.createElement(tag); if (classList.length) el.className = classList.join(' '); children.forEach(child => { if (typeof child === 'string') { el.appendChild(document.createTextNode(child)); } else if (child instanceof Node) { el.appendChild(child); } }); return el; }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- IKON-BIBLIOTEK ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        const icons = {
+            copy: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"></path></svg>`,
+            chevronLeft: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M165.66,202.34a8,8,0,0,1-11.32,0L80,128,154.34,53.66a8,8,0,0,1,11.32,11.32L97,128l68.66,63.02A8,8,0,0,1,165.66,202.34Z"></path></svg>`,
+            chevronRight: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M181.66,133.66,107.32,208a8,8,0,0,1-11.32-11.32L164.69,128,96,59.31A8,8,0,0,1,107.32,48l74.34,74.34A8,8,0,0,1,181.66,133.66Z"></path></svg>`,
+            plus: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"></path></svg>`,
+            square: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M208,24H48A24,24,0,0,0,24,48V208a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V48A24,24,0,0,0,208,24Zm8,184a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V48a8,8,0,0,1,8-8H208a8,8,0,0,1,8,8Z"></path></svg>`,
+            alertCircle: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M128,24a104,104,0,1,0,104,104A104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-40a8,8,0,0,1,16,0Zm0-80V80a8,8,0,0,1,16,0v48a8,8,0,0,1-16,0Z"></path></svg>`,
+            chartLineUp: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M229.66,85.66,160,155.31,120,115.31,50.34,185a8,8,0,0,1-11.32-11.32l75.34-75.33a8,8,0,0,1,11.32,0L160,132.69l64-64a8,8,0,0,1,11.32,11.32L229.66,85.66Z M240,208H16a8,8,0,0,1,0-16H240a8,8,0,0,1,0,16Z"></path></svg>`,
+            info: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM120,108a8,8,0,0,1,8-8h0a8,8,0,0,1,0,16H128A8,8,0,0,1,120,108Zm12,24a8,8,0,0,1,8,8v32a8,8,0,0,1-16,0V140a8,8,0,0,1,8-8Z"></path></svg>`,
+            divide: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,128a8,8,0,0,1-8,8H48a8,8,0,0,1,0-16H208A8,8,0,0,1,216,128ZM128,72a12,12,0,1,0,12,12A12,12,0,0,0,128,72Zm0,100a12,12,0,1,0,12,12A12,12,0,0,0,128,172Z"></path></svg>`,
+            invoice: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,88H152V24a8,8,0,0,0-8-8H48A16,16,0,0,0,32,32V224a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A8,8,0,0,0,216,88ZM160,80h43.31L160,36.69ZM208,224H48V32h96v56a16,16,0,0,0,16,16h56Zm-36-80a8,8,0,0,1-8,8H92a8,8,0,0,1,0-16h72A8,8,0,0,1,172,144Zm-36,32a8,8,0,0,1-8,8H92a8,8,0,0,1,0-16h36A8,8,0,0,1,136,176Z"></path></svg>`,
+            briefcase: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,64H176V56a24,24,0,0,0-24-24H104A24,24,0,0,0,80,56v8H40A16,16,0,0,0,24,80V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V80A16,16,0,0,0,216,64ZM96,56a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96ZM224,200a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H216a8,8,0,0,1,8,8Z"></path></svg>`,
+            calendarCheck: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,32H40A24,24,0,0,0,16,56V200a24,24,0,0,0,24,24H216a24,24,0,0,0,24-24V56A24,24,0,0,0,216,32Zm8,168a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V80H224ZM224,64H32V56a8,8,0,0,1,8-8H216a8,8,0,0,1,8,8ZM157.66,133.66,112,180,84.69,152.69a8,8,0,0,1,11.31-11.32L112,157.38l40.34-40.34a8,8,0,0,1,11.32,11.32Z"></path></svg>`,
+            checkCircle: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"></path></svg>`,
+            filePdf: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,88H152V24a8,8,0,0,0-8-8H48A16,16,0,0,0,32,32V224a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A8,8,0,0,0,216,88ZM160,80h43.31L160,36.69ZM208,224H48a8,8,0,0,1-8-8V32a8,8,0,0,1,8-8h96v56a16,16,0,0,0,16,16h56v96A8,8,0,0,1,208,224Z"></path></svg>`,
+            trash: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"></path></svg>`,
+            caretUpDown: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M181.66,101.66,133.66,53.66a8,8,0,0,0-11.32,0L73.66,101.66A8,8,0,0,0,80,112h96a8,8,0,0,0,6.34-13.66ZM176,144H80a8,8,0,0,0-6.34,13.66l48,48a8,8,0,0,0,11.32,0l48-48A8,8,0,0,0,176,144Z"></path></svg>`,
+            x: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path></svg>`,
+        };
+        
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- LOGIK-HANTERARE & PDF-GENERATOR ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        const statusTextMap = { 'utkast': t('status.utkast'), 'förslag-skickat': t('status.förslag-skickat'), 'godkänd': t('status.godkänd'), 'genomförd': t('status.genomförd'), 'betald': t('status.betald'), 'förlorad': t('status.förlorad'), 'arkiverad': t('status.arkiverad') };
+        const statusColors = { utkast: 'bg-yellow-500', 'förslag-skickat': 'bg-blue-500', godkänd: 'bg-green-500', genomförd: 'bg-blue-700', betald: 'bg-emerald-500', förlorad: 'bg-red-500', arkiverad: 'bg-gray-500' };
+        let toastTimer = null;
+
+        function showToast(message, type = 'success', options = {}) {
+            const { undoable = false, onRetry = null } = options;
+            clearTimeout(toastTimer);
+            setState({ toast: { id: Date.now(), message, type, undoable, onRetry } });
+            toastTimer = setTimeout(() => {
+                setState({ toast: null });
+                if (undoable) setState({ lastDeleted: null });
+            }, 5000);
+        }
+
+        function handleLogin() { setState({ isLoggedIn: true }); loadInitialData(); }
+        
+        async function handleSaveQuote(updatedQuote) {
+            const priceBreakdown = calculateTotal(updatedQuote);
+            const withTotal = {...updatedQuote, total: priceBreakdown.finalTotal};
+            
+            if (!withTotal.customer?.trim()) {
+                showToast('Kundnamn är obligatoriskt.', 'error');
+                return;
+            }
+            if (!withTotal.eventDate) {
+                showToast('Eventdatum är obligatoriskt.', 'error');
+                return;
+            }
+
+            setState({ isSaving: true });
+
+            try {
+                await dataService.saveQuote(withTotal);
+                showToast(`Ärende ${withTotal.id} har sparats.`, 'success');
+                await loadInitialData(); // Hämta ny data
+                setState({ isSaving: false, selectedQuoteId: null, formData: null }); // Stäng modalen först efter allt är klart
+            } catch (error) {
+                console.error("Save Error:", error);
+                // Återställ inte formuläret vid fel, så användaren kan försöka igen.
+                setState({ isSaving: false }); 
+                showToast(`Sparning av ärende ${withTotal.id} misslyckades.`, 'error', {
+                    onRetry: () => handleSaveQuote(updatedQuote)
+                });
+            }
+        }
+
+        function handleStatusChange(quoteToUpdate, newStatus, eventMessage) {
+            const defaultEventMessage = `Status manuellt ändrad till "${statusTextMap[newStatus]}".`;
+            const newEvent = { timestamp: new Date().toISOString(), event: eventMessage || defaultEventMessage };
+            const updatedQuote = { ...quoteToUpdate, status: newStatus, events: [...(quoteToUpdate.events || []), newEvent] };
+            
+            const optimisticQuotes = state.quotes.map(q => q.id === updatedQuote.id ? updatedQuote : q);
+            setState({ quotes: optimisticQuotes }, { render: 'full' });
+            
+            showToast(t('toast.status_changed', { status: statusTextMap[newStatus] }), 'success');
+            
+            dataService.saveQuote(updatedQuote)
+                .then(() => console.log(`Status change for ${updatedQuote.id} saved successfully.`))
+                .catch(error => {
+                    console.error("Save Error on status change:", error);
+                    setState({ quotes: state.quotes.map(q => q.id === updatedQuote.id ? quoteToUpdate : q) });
+                    showToast(`Kunde inte spara statusändring för ${updatedQuote.id}.`, 'error');
+                });
+        }
+
+        function handleNewQuote() { 
+            const newQuoteData = { 
+                id: `GULDKANT-${Date.now()}`, 
+                recordId: null, 
+                status: 'utkast', 
+                customer: '', 
+                customerType: 'privat', 
+                eventDate: new Date().toISOString().split('T')[0], 
+                events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat' }], 
+                customCosts: [], 
+                customDiets: [], 
+                standardDiets: {}, 
+                total: 0 
+            }; 
+            setState({ selectedQuoteId: newQuoteData.id, formData: newQuoteData }); 
+        }
+
+        function handleCopyQuote(quoteToCopy) { const newQuoteData = { ...JSON.parse(JSON.stringify(quoteToCopy)), id: `GULDKANT-${Date.now()}`, recordId: null, status: 'utkast', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: `Kopia från ${quoteToCopy.id}.` }] }; delete newQuoteData.total; handleSaveQuote(newQuoteData); showToast(t('toast.copied'), 'success'); }
+        function handleDeleteQuote(quoteToDelete) { setState({ lastDeleted: quoteToDelete, quotes: state.quotes.filter(q => q.id !== quoteToDelete.id), selectedQuoteId: null, formData: null, }); showToast(t('toast.deleted', {id: quoteToDelete.id}), 'success', { undoable: true }); }
+        function handleUndoDelete() { if (state.lastDeleted) { const newQuotes = [...state.quotes, state.lastDeleted].sort((a,b) => new Date(b.events[0]?.timestamp) - new Date(a.events[0]?.timestamp)); setState({ quotes: newQuotes, lastDeleted: null, toast: null }); clearTimeout(toastTimer); } }
+        
+        async function handleSendProposalAction(quote) {
+            try {
+                await dataService.sendQuoteEmail({ action: 'dispatch', offerId: quote.id });
+                handleStatusChange(quote, 'förslag-skickat', 'Förslag skickat till kund via systemet.');
+            } catch (error) {
+                console.error("Failed to send proposal email:", error);
+                showToast(`Kunde inte skicka förslag för ${quote.id}.`, 'error');
+            }
+        }
+
+        async function handleApproveProposalAction(quote) {
+            handleStatusChange(quote, 'godkänd', 'Förslag godkänt av administratör.');
+        }
+        
+        function requestDeleteConfirmation(quote) { setState({ confirmationState: { isOpen: true, title: 'Radera Ärende?', message: `Är du säker på att du vill radera ärendet "${quote.customer || 'Namnlös'}" (${quote.id})? Denna åtgärd kan inte ångras.`, onConfirm: () => { setState({ confirmationState: { isOpen: false }}); handleDeleteQuote(quote); }, confirmText: 'Ja, radera', confirmButtonClass: 'bg-red-600 text-white hover:bg-red-700' }}); }
+        function requestSendConfirmation(quote) { setState({ confirmationState: { isOpen: true, title: 'Skicka Förslag?', message: `Är du säker på att du vill ändra status till "Förslag Skickat"? Detta meddelar normalt kunden.`, onConfirm: () => { setState({ confirmationState: { isOpen: false }}); handleSendProposalAction(quote); }, confirmText: 'Ja, skicka', confirmButtonClass: `${themes[state.theme].buttonPrimaryBg} ${themes[state.theme].buttonPrimaryText} ${themes[state.theme].buttonPrimaryHover}` }}); }
+        function requestApproveConfirmation(quote) { setState({ confirmationState: { isOpen: true, title: 'Godkänn Förslag Manuellt?', message: `Är du säker på att du vill godkänna detta förslag? Statusen kommer ändras till "Godkänd".`, onConfirm: () => { setState({ confirmationState: { isOpen: false }}); handleApproveProposalAction(quote); }, confirmText: 'Ja, godkänn', confirmButtonClass: 'bg-green-500 text-white hover:bg-green-600' }}); }
+
+        function svgToPngDataUrl(svgText, width, height) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                img.onload = () => { ctx.drawImage(img, 0, 0, width, height); resolve(canvas.toDataURL('image/png')); };
+                img.onerror = (e) => { reject(new Error("Failed to load SVG image for PDF conversion.")); };
+                img.src = 'data:image/svg+xml;base64,' + btoa(svgText);
+            });
+        }
+
+        async function generateQuotePdf(quote) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            try {
+                const logoUrl = 'https://raw.githubusercontent.com/NordSync/Guldkant-Logga/refs/heads/main/Guldkant%20logga.svg';
+                const response = await fetch(logoUrl);
+                const svgText = await response.text();
+                const logoPngDataUrl = await svgToPngDataUrl(svgText, 100, 100);
+                doc.addImage(logoPngDataUrl, 'PNG', 15, 15, 30, 30);
+                doc.setFontSize(22); doc.setFont('helvetica', 'bold'); doc.text('OFFERT', 200, 25, { align: 'right' });
+                doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+                doc.text('Kund:', 15, 60); doc.text('E-post:', 15, 65); doc.text('Telefon:', 15, 70); doc.text('Eventdatum:', 15, 75);
+                doc.setFont('helvetica', 'normal');
+                doc.text(quote.customer || '', 35, 60); doc.text(quote.contactEmail || '', 35, 65); doc.text(quote.contactPhone || '', 35, 70); doc.text(formatDate(quote.eventDate), 35, 75);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Offertnummer:', 130, 60); doc.text('Antal gäster:', 130, 65); doc.text('Tid:', 130, 70);
+                doc.setFont('helvetica', 'normal');
+                doc.text(quote.id, 160, 60); doc.text(`${quote.guestCount || 0} personer`, 160, 65); doc.text(`${quote.eventStartTime || ''} - ${quote.eventEndTime || ''}`, 160, 70);
+                doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text('MENY', 15, 95);
+                doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text(doc.splitTextToSize(quote.menuDescription || 'Ej specificerat', 180), 15, 100);
+                let lastY = doc.lastAutoTable.finalY || 100;
+                if (quote.customerRequests) {
+                    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text('KUNDENS ÖNSKEMÅL', 15, lastY + 15);
+                    doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text(doc.splitTextToSize(quote.customerRequests, 180), 15, lastY + 20);
+                    lastY = doc.lastAutoTable.finalY || lastY + 20;
+                }
+                const head = [['Beskrivning', 'Detalj', 'Pris']];
+                const body = [];
+                const pricePerGuest = Number(quote.pricePerGuest) || 0;
+                const guestCount = Number(quote.guestCount) || 0;
+                const basePrice = pricePerGuest * guestCount;
+                body.push(['Meny', `${pricePerGuest.toLocaleString('sv-SE')} kr x ${guestCount}p`, `${basePrice.toLocaleString('sv-SE')} kr`]);
+                if (quote.chefCost > 0) body.push(['Personal: Kockar', '', `${Number(quote.chefCost).toLocaleString('sv-SE')} kr`]);
+                if (quote.servingStaffCost > 0) body.push(['Personal: Servering', '', `${Number(quote.servingStaffCost).toLocaleString('sv-SE')} kr`]);
+                (quote.customCosts || []).forEach(cost => { if(cost.description && cost.amount) body.push([cost.description, '', `${Number(cost.amount).toLocaleString('sv-SE')} kr`]); });
+                
+                const priceBreakdown = calculateTotal(quote);
+                
+                body.push([' ', ' ', ' ']);
+                if (quote.discountAmount > 0) body.push([{ content: 'Rabatt', styles: { fontStyle: 'bold' } }, '', `-${Number(quote.discountAmount).toLocaleString('sv-SE')} kr`]);
+                body.push([{ content: 'Delsumma:', styles: { fontStyle: 'bold' } }, '', `${priceBreakdown.subTotal.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
+                body.push([{ content: 'Moms (12%):', styles: { fontStyle: 'bold' } }, '', `${priceBreakdown.vat.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
+                body.push([{ content: 'Totalt att betala:', styles: { fontStyle: 'bold', fontSize: 12 } }, '', `${priceBreakdown.finalTotal.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
+                doc.autoTable({ head, body, startY: lastY + 30, theme: 'grid', headStyles: { fillColor: [241, 245, 249], textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 80 }, 1: { cellWidth: 60 }, 2: { cellWidth: 'auto', halign: 'right' } } });
+                doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+                const footerText = "Offerten är giltig i 30 dagar. När vi är överens om innehåll skickar Guldkant en beställningsbekräftelse via mail som behöver ett godkännande från er sida.\n\nMenyförslag av. Guldkant, camilla@restaurangguldkant.se/0739-411422\nRestaurang Guldkant | org nr 556719-3635 | Grönsakstorget 6, 593 33 Västervik";
+                doc.text(footerText, 15, doc.internal.pageSize.height - 30);
+                doc.text(`Sida 1 av 1`, 200, doc.internal.pageSize.height - 10, { align: 'right' });
+                doc.save(`Guldkant-Offert-${quote.id}-${quote.eventDate}.pdf`);
+                showToast('PDF genererad!', 'success');
+            } catch (error) {
+                console.error("PDF Generation Error:", error);
+                showToast('Kunde inte generera PDF.', 'error');
+            }
+        }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- UI-KOMPONENTER ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        
+        function SimpleLoginScreen() {
+            const classes = themes[state.theme];
+            const container = document.createElement('div');
+            container.className = `flex items-center justify-center min-h-screen ${classes.bg}`;
+            const formContainer = document.createElement('div');
+            formContainer.className = `p-8 md:p-10 rounded-xl shadow-2xl w-full max-w-md ${classes.cardBg} animate-fade-in-scale`;
+            formContainer.innerHTML = `<div class="flex justify-center mb-8"><img src="https://raw.githubusercontent.com/NordSync/Guldkant-Logga/refs/heads/main/Guldkant%20logga.svg" alt="Guldkant Logotyp" class="h-24" /><span class="text-2xl md:text-3xl font-bold self-center ml-4 ${classes.text}">Guldkant Portalen</span></div>`;
+            formContainer.append(
+                createElement('h1', ['text-2xl md:text-3xl', 'font-bold', 'text-center', 'mb-2'], [t('login.welcome')]),
+                createElement('p', [classes.textSecondary, 'text-center', 'mb-8'], [t('login.prompt')])
+            );
+            const form = document.createElement('form');
+            form.className = 'space-y-6';
+            const inputGroup = document.createElement('div');
+            const label = createElement('label', [classes.textSecondary, 'text-xs', 'block', 'mb-1'], [t('login.secret_phrase')]);
+            const input = document.createElement('input');
+            input.type = 'password';
+            input.placeholder = '••••••••••••';
+            input.className = `w-full p-3 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`;
+            const errorMsg = document.createElement('p');
+            errorMsg.className = 'text-red-500 text-xs mt-1';
+            inputGroup.append(label, input, errorMsg);
+            const button = document.createElement('button');
+            button.type = 'submit';
+            button.textContent = t('login.button');
+            button.className = `w-full ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-3 rounded-lg font-semibold transition-colors text-lg animate-pulse-glow ${classes.focus}`;
+            form.append(inputGroup, button);
+            formContainer.appendChild(form);
+            container.appendChild(formContainer);
+            form.addEventListener('submit', (e) => { e.preventDefault(); if (input.value.toLowerCase() === 'guldbyxor') { handleLogin(); } else { errorMsg.textContent = t('login.error'); input.value = ''; input.classList.add('border-red-500'); } });
+            input.addEventListener('input', () => { errorMsg.textContent = ''; input.classList.remove('border-red-500'); });
+            return container;
+        }
+
+        function Header() {
+            const classes = themes[state.theme];
+            const header = document.createElement('header');
+            header.className = `p-4 flex flex-col sm:flex-row justify-between items-center ${classes.border} border-b gap-4 sm:gap-0`;
+            const logoContainer = document.createElement('div');
+            logoContainer.innerHTML = `<div class="flex items-center gap-2 md:gap-4 ${classes.text}"><img src="https://raw.githubusercontent.com/NordSync/Guldkant-Logga/refs/heads/main/Guldkant%20logga.svg" alt="Guldkant Logotyp" class="h-12 md:h-14" /><span class="text-xl md:text-3xl font-bold">Guldkant Portalen</span></div>`;
+            const nordsymContainer = document.createElement('div');
+            nordsymContainer.className = 'relative flex items-center gap-2 opacity-70 mt-2';
+            const interactiveLogo = document.createElement('div');
+            interactiveLogo.className = 'relative group flex items-center gap-2 cursor-pointer';
+            interactiveLogo.innerHTML = `<span class="text-xs text-gray-400 select-none">Powered by</span><div class="relative h-8 w-8"><img src="https://raw.githubusercontent.com/NordSync/Logga-minus-text/refs/heads/main/Final%20logo%20no%20text.svg" alt="NordSym Logo" class="w-full h-full rounded-full transition-all duration-300 ease-in-out group-hover:scale-[3.5] group-hover:z-20 group-hover:bg-white/20 dark:group-hover:bg-gray-900/50 group-hover:backdrop-blur-sm group-hover:p-1 group-hover:shadow-2xl" /><div class="absolute inset-0 flex items-center justify-center w-full h-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">${icons.info(`w-4 h-4 ${classes.accent} drop-shadow-lg`)}</div></div>`;
+            interactiveLogo.onclick = () => setState({ isHubOpen: true });
+            nordsymContainer.appendChild(interactiveLogo);
+            logoContainer.appendChild(nordsymContainer);
+            const themeButton = document.createElement('button');
+            themeButton.className = `p-3 rounded-full ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} transition-colors ${classes.focus}`;
+            themeButton.innerHTML = state.theme === 'dark' ? '☀️' : '🌙';
+            themeButton.onclick = () => setState({ theme: state.theme === 'dark' ? 'light' : 'dark' });
+            header.append(logoContainer, themeButton);
+            return header;
+        }
+
+        function MainNav() {
+            const classes = themes[state.theme];
+            const nav = document.createElement('nav');
+            nav.className = `px-4 md:px-8 pt-4 border-b ${classes.border}`;
+            const navItems = [{ id: 'quotes', label: t('nav.quotes') }, { id: 'ai', label: t('nav.ai_log') }, { id: 'analytics', label: t('nav.analytics') }];
+            const container = createElement('div', ['flex', 'flex-wrap', 'gap-2']);
+            navItems.forEach(item => {
+                const button = document.createElement('button');
+                button.textContent = item.label;
+                button.className = `px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${classes.focus} ${state.activeView === item.id ? classes.navActive : classes.navInactive}`;
+                button.onclick = () => setState({ activeView: item.id });
+                container.appendChild(button);
+            });
+            nav.appendChild(container);
+            return nav;
+        }
+
+        function StatusSelector(quote) {
+            const classes = themes[state.theme];
+            const container = document.createElement('div');
+            container.className = 'relative w-full';
+            container.onclick = (e) => e.stopPropagation();
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `relative w-full cursor-pointer rounded-md border ${classes.border} ${classes.inputBg} py-2 pl-3 pr-10 text-left text-sm shadow-sm ${classes.focus}`;
+            button.innerHTML = `<span class="flex items-center"><span class="h-2.5 w-2.5 flex-shrink-0 rounded-full ${statusColors[quote.status]}"></span><span class="ml-3 block truncate">${statusTextMap[quote.status]}</span></span><span class="pointer-events-none absolute inset-y-0 right-0 ml-3 flex items-center pr-2">${icons.caretUpDown(`h-5 w-5 ${classes.textSecondary}`)}</span>`;
+            const optionsContainer = document.createElement('div');
+            optionsContainer.className = `absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md ${classes.cardBg} py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm hidden`;
+            Object.keys(statusTextMap).forEach(statusId => {
+                const option = document.createElement('div');
+                option.className = `flex cursor-pointer select-none items-center p-2 transition-colors hover:${classes.inputBg}`;
+                option.innerHTML = `<span class="h-2.5 w-2.5 flex-shrink-0 rounded-full ${statusColors[statusId]}"></span><span class="ml-3 block truncate ${quote.status === statusId ? `font-semibold ${classes.accent}` : 'font-normal'}">${statusTextMap[statusId]}</span>`;
+                option.onclick = () => { handleStatusChange(quote, statusId); optionsContainer.classList.add('hidden'); };
+                optionsContainer.appendChild(option);
+            });
+            const closeDropdown = (e) => { if (!container.contains(e.target)) { optionsContainer.classList.add('hidden'); document.removeEventListener('click', closeDropdown); } };
+            button.onclick = () => { const isHidden = optionsContainer.classList.toggle('hidden'); if (!isHidden) { setTimeout(() => document.addEventListener('click', closeDropdown), 0); } else { document.removeEventListener('click', closeDropdown); } };
+            container.append(button, optionsContainer);
+            return container;
+        }
+        
+        function QuoteCard(quote) {
+            const classes = themes[state.theme];
+            const statusBorderColor = { utkast: 'border-l-yellow-500', 'förslag-skickat': 'border-l-blue-500', 'godkänd': 'border-l-green-500', 'genomförd': 'border-l-blue-700', 'betald': 'border-l-emerald-500', 'förlorad': 'border-l-red-500', 'arkiverad': 'border-l-gray-500' };
+            const card = document.createElement('div');
+            card.tabIndex = 0;
+            card.className = `${classes.cardBg} rounded-lg shadow-lg p-4 md:p-5 border ${classes.border} ${statusBorderColor[quote.status] || 'border-l-gray-700'} border-l-4 transition-all duration-300 flex flex-col justify-between hover:ring-2 hover:scale-[1.02] focus-within:ring-2 focus-within:ring-cyan-500/50 ${classes.focus}`;
+            card.onclick = () => setState({ selectedQuoteId: quote.id, formData: JSON.parse(JSON.stringify(quote)) });
+            const topSection = document.createElement('div');
+            topSection.innerHTML = `<div class="flex justify-between items-start mb-2"><h3 class="font-bold text-lg pr-2 flex-grow">${quote.customer || t('quote.nameless')}</h3></div>`;
+            topSection.appendChild(StatusSelector(quote));
+            const bottomSection = document.createElement('div');
+            bottomSection.className = `mt-4 pt-4 border-t border-dashed ${classes.border}`;
+            bottomSection.innerHTML = `<div class="flex justify-between items-end"><div><p class="${classes.textSecondary} text-xs">${t('quote.event_date')}</p><p class="font-medium">${formatDate(quote.eventDate)}</p></div><div><p class="${classes.textSecondary} text-xs text-right">${t('quote.total')}</p><p class="font-bold text-lg md:text-xl ${classes.accent}">${(quote.total || 0).toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' })}</p></div></div>`;
+            card.append(topSection, bottomSection);
+            return card;
+        }
+        
+        function QuotesControls() {
+            const classes = themes[state.theme];
+            const container = document.createElement('div');
+            container.className = 'mb-4';
+            const topRow = document.createElement('div');
+            topRow.className = 'flex flex-col md:flex-row gap-4 justify-between items-center mb-4';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = t('controls.search_placeholder');
+            searchInput.className = `w-full md:w-2/5 p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`;
+            searchInput.oninput = (e) => setState({ searchTerm: e.target.value });
+            searchInput.value = state.searchTerm;
+            const cardViewButton = document.createElement('button');
+            cardViewButton.textContent = t('controls.card_view');
+            cardViewButton.className = `w-1/2 md:w-auto px-3 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.viewMode === 'cards' ? classes.filterActive : classes.filterInactive}`;
+            cardViewButton.onclick = () => setState({ viewMode: 'cards' });
+            const calendarViewButton = document.createElement('button');
+            calendarViewButton.textContent = t('controls.calendar_view');
+            calendarViewButton.className = `w-1/2 md:w-auto px-3 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.viewMode === 'calendar' ? classes.filterActive : classes.filterInactive}`;
+            calendarViewButton.onclick = () => setState({ viewMode: 'calendar' });
+            const newQuoteButton = document.createElement('button');
+            newQuoteButton.innerHTML = `${icons.plus('inline-block -mt-1 mr-1')} ${t('controls.new_quote')}`;
+            newQuoteButton.className = `w-full mt-2 md:mt-0 md:w-auto ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow-sm ${classes.focus}`;
+            newQuoteButton.onclick = handleNewQuote;
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'flex gap-2 w-full md:w-auto';
+            buttonGroup.append(cardViewButton, calendarViewButton);
+            const rightSideContainer = document.createElement('div');
+            rightSideContainer.className = 'flex flex-col md:flex-row gap-2 w-full md:w-auto';
+            rightSideContainer.append(buttonGroup, newQuoteButton);
+            topRow.append(searchInput, rightSideContainer);
+            const filterRow = document.createElement('div');
+            filterRow.className = 'flex flex-wrap gap-2';
+            const filters = [ { id: 'prioriterade', label: t('controls.prioritized') }, { id: 'aktiva', label: t('controls.active') }, { id: 'utkast', label: t('status.utkast') }, { id: 'förslag-skickat', label: t('status.förslag-skickat') }, { id: 'godkänd', label: t('status.godkänd') }, { id: 'genomförd', label: t('status.genomförd') }, { id: 'betald', label: t('status.betald') }, { id: 'förlorad', label: t('status.förlorad') }, { id: 'arkiverad', label: t('status.arkiverad') } ];
+            filters.forEach(f => {
+                const button = document.createElement('button');
+                button.textContent = f.label;
+                button.className = `px-4 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.filter === f.id ? classes.filterActive : classes.filterInactive}`;
+                button.onclick = () => setState({ filter: f.id, displayLimit: 12 });
+                filterRow.appendChild(button);
+            });
+            container.append(topRow, filterRow);
+            return container;
+        }
+
+        function AnalyticsSummaryCard({ title, value, unit, icon }) {
+            const classes = themes[state.theme];
+            const card = document.createElement('div');
+            card.className = `${classes.cardBg} p-4 rounded-lg shadow-md flex items-center gap-4 border-2 border-cyan-500/30 group transition-all duration-300 hover:shadow-xl hover:border-cyan-500`;
+            card.innerHTML = `<div class="p-3 rounded-full ${classes.inputBg} transition-all duration-300"><div class="text-2xl ${classes.textSecondary} transition-all duration-300 group-hover:scale-110 group-hover:${classes.accent}">${icon}</div></div><div><h3 class="text-sm font-medium ${classes.textSecondary}">${title}</h3><p class="text-xl md:text-2xl font-bold">${value} <span class="text-lg font-medium">${unit || ''}</span></p></div>`;
+            return card;
+        }
+
+        function createDashboardWidget(title, icon, borderColor, items, emptyMessage) {
+            const classes = themes[state.theme];
+            const widget = document.createElement('div');
+            widget.className = `p-4 rounded-lg shadow-md border ${classes.border} ${classes.cardBg} ${borderColor} flex flex-col h-full`;
+            widget.innerHTML = `<h3 class="font-bold mb-3 flex items-center gap-2 flex-shrink-0">${icon} <span>${title}</span></h3>`;
+            const content = document.createElement('div');
+            content.className = 'flex-grow overflow-y-auto space-y-2 pr-2 hide-scrollbar';
+            if (items.length === 0) {
+                content.innerHTML = `<div class="text-center p-4 text-sm flex flex-col items-center justify-center h-full">${icons.checkCircle(`w-8 h-8 text-green-500`)}<p class="mt-2 ${classes.textSecondary}">${emptyMessage}</p></div>`;
+            } else {
+                items.forEach(q => {
+                    const itemEl = document.createElement('div');
+                    itemEl.className = `p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${classes.focus}`;
+                    itemEl.onclick = () => setState({ selectedQuoteId: q.id, formData: JSON.parse(JSON.stringify(q)) });
+                    let itemContent = `<p class="font-semibold text-sm">${q.customer}</p>`;
+                    if (title === "Ärenden som kräver åtgärd") itemContent += `<p class="text-xs ${classes.textSecondary}">Status: ${statusTextMap[q.status]}</p>`;
+                    else if (title === "Uppföljning & Fakturering") itemContent += `<p class="text-xs ${classes.textSecondary}">Genomförd: ${formatDate(q.eventDate)}</p>`;
+                    else if (title === "Kommande Event") itemContent = `<div class="flex justify-between items-center"><p class="font-semibold text-sm">${q.customer}</p>${q.status === 'betald' ? '<span class="text-xs font-bold text-purple-400">BETALD</span>' : ''}</div><p class="text-xs ${classes.textSecondary}">Eventdatum: ${formatDate(q.eventDate)}</p>`;
+                    itemEl.innerHTML = itemContent;
+                    content.appendChild(itemEl);
+                });
+            }
+            widget.appendChild(content);
+            return widget;
+        }
+
+        function QuotesDashboard() {
+            const classes = themes[state.theme];
+            const container = document.createElement('div');
+            container.className = 'p-4 md:p-6 lg:p-8';
+            const allQuotes = state.quotes;
+            const activeQuotes = allQuotes.filter(q => !['arkiverad', 'betald', 'förlorad'].includes(q.status));
+            const totalValue = activeQuotes.reduce((sum, q) => sum + (q.total || 0), 0);
+            const analytics = { totalQuoteValue: totalValue, averageQuoteValue: activeQuotes.length ? (totalValue / activeQuotes.length) : 0, activeQuotesCount: activeQuotes.length };
+            const actionItems = allQuotes.filter(q => q.status === 'utkast' || q.status === 'förslag-skickat').sort((a,b) => new Date(a.events[0]?.timestamp) - new Date(b.events[0]?.timestamp));
+            const followUpItems = allQuotes.filter(q => q.status === 'genomförd').slice(0, 5);
+            const now = new Date(); now.setHours(0,0,0,0);
+            const upcomingEvents = allQuotes.filter(q => ['godkänd', 'betald'].includes(q.status) && new Date(q.eventDate) >= now).sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate)).slice(0, 5);
+            const filteredQuotes = allQuotes.filter(q => {
+                const term = state.searchTerm.toLowerCase();
+                const searchMatch = term === '' || q.customer?.toLowerCase().includes(term) || q.id?.toLowerCase().includes(term);
+                let statusMatch = false;
+                switch (state.filter) {
+                    case 'prioriterade': statusMatch = ['utkast', 'förslag-skickat'].includes(q.status); break;
+                    case 'aktiva': statusMatch = !['betald', 'förlorad', 'arkiverad'].includes(q.status); break;
+                    default: statusMatch = q.status === state.filter; break;
+                }
+                return statusMatch && searchMatch;
+            });
+            const paginatedQuotes = filteredQuotes.slice(0, state.displayLimit);
+            container.innerHTML = `<div class="flex justify-between items-center mb-2"><h1 class="text-2xl md:text-3xl font-bold">${t('dashboard.title')}</h1><button id="focus-mode-btn" class="${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} p-2 rounded-full transition-all duration-300 flex items-center justify-center w-10 h-10 ${state.isFocusMode ? 'ring-2 ring-cyan-500' : ''} ${classes.focus}" title="${state.isFocusMode ? "Avsluta fokusläge" : "Fokusläge"}">${state.isFocusMode ? icons.x(`${classes.accent} w-1.2 h-1.2`) : icons.square(classes.accent)}</button></div><p class="${classes.textSecondary} mb-8">${t('dashboard.subtitle')}</p>`;
+            container.querySelector('#focus-mode-btn').onclick = () => setState({ isFocusMode: !state.isFocusMode });
+            const widgetsContainer = document.createElement('div');
+            widgetsContainer.className = `transition-all duration-500 ${state.isFocusMode ? 'max-h-0 opacity-0 overflow-hidden mb-0' : 'max-h-screen opacity-100 mb-8'}`;
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-1 lg:grid-cols-4 gap-6';
+            const col1 = createDashboardWidget("Ärenden som kräver åtgärd", icons.alertCircle('text-yellow-500'), 'border-l-4 border-yellow-500', actionItems, "Bra jobbat! Inga ärenden kräver åtgärd.");
+            col1.className += ' lg:col-span-1';
+            const col2 = document.createElement('div');
+            col2.className = 'lg:col-span-2 grid grid-rows-1 md:grid-rows-2 gap-6';
+            col2.appendChild(createDashboardWidget("Kommande Event", icons.calendarCheck('text-green-500'), 'border-l-4 border-green-500', upcomingEvents, "Inga kommande event inbokade."));
+            col2.appendChild(createDashboardWidget("Uppföljning & Fakturering", icons.invoice('text-blue-500'), 'border-l-4 border-blue-500', followUpItems, "Inga genomförda event väntar på fakturering."));
+            const col3 = document.createElement('div');
+            col3.className = 'lg:col-span-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-6';
+            col3.appendChild(AnalyticsSummaryCard({ title: "Aktivt Värde (Inkl. moms)", value: analytics.totalQuoteValue.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' }), icon: icons.chartLineUp() }));
+            col3.appendChild(AnalyticsSummaryCard({ title: "Snittvärde/Ärende", value: analytics.averageQuoteValue.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' }), icon: icons.divide() }));
+            col3.appendChild(AnalyticsSummaryCard({ title: "Aktiva Ärenden", value: analytics.activeQuotesCount, icon: icons.briefcase() }));
+            grid.append(col1, col2, col3);
+            widgetsContainer.appendChild(grid);
+            container.appendChild(widgetsContainer);
+            container.appendChild(QuotesControls());
+            const viewContainer = document.createElement('div');
+            if (state.viewMode === 'cards') {
+                const quoteCardsGrid = document.createElement('div');
+                quoteCardsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6';
+                if (state.isLoading) quoteCardsGrid.innerHTML = `<p>Laddar ärenden...</p>`;
+                else if (paginatedQuotes.length > 0) paginatedQuotes.forEach(q => quoteCardsGrid.appendChild(QuoteCard(q)));
+                else quoteCardsGrid.innerHTML = `<p>Inga ärenden hittades för det valda filtret.</p>`;
+                viewContainer.appendChild(quoteCardsGrid);
+            } else {
+                 viewContainer.appendChild(TactileCalendar(paginatedQuotes));
+            }
+            if (filteredQuotes.length > state.displayLimit) {
+                const loadMoreContainer = document.createElement('div');
+                loadMoreContainer.className = 'text-center mt-8';
+                const loadMoreButton = document.createElement('button');
+                loadMoreButton.textContent = t('controls.load_more');
+                loadMoreButton.className = `${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-6 py-3 rounded-lg font-semibold transition-colors shadow-sm ${classes.focus}`;
+                loadMoreButton.onclick = () => setState({ displayLimit: state.displayLimit + 12 });
+                loadMoreContainer.appendChild(loadMoreButton);
+                viewContainer.appendChild(loadMoreContainer);
+            }
+            container.appendChild(viewContainer);
+            return container;
+        }
+
+        function TactileCalendar(quotes) {
+            const classes = themes[state.theme];
+            const container = document.createElement('div');
+            container.className = `${classes.cardBg} p-2 sm:p-4 rounded-lg shadow-lg border ${classes.border}`;
+            const viewDate = state.calendarViewDate;
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center mb-4';
+            header.innerHTML = `<h3 class="text-lg sm:text-xl font-bold ${classes.accent}">${viewDate.toLocaleDateString('sv-SE', { month: 'long', year: 'numeric' })}</h3>`;
+            const navButtons = document.createElement('div');
+            navButtons.className = 'flex items-center gap-2';
+            const prevButton = document.createElement('button');
+            prevButton.className = `p-2 rounded-full ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} ${classes.focus}`;
+            prevButton.innerHTML = icons.chevronLeft('w-5 h-5');
+            prevButton.onclick = () => { const newDate = new Date(viewDate); newDate.setMonth(newDate.getMonth() - 1); setState({ calendarViewDate: newDate }); };
+            const todayButton = document.createElement('button');
+            todayButton.textContent = 'Idag';
+            todayButton.className = `px-3 py-1 text-sm rounded-md ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} ${classes.focus}`;
+            todayButton.onclick = () => setState({ calendarViewDate: new Date() });
+            const nextButton = document.createElement('button');
+            nextButton.className = `p-2 rounded-full ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} ${classes.focus}`;
+            nextButton.innerHTML = icons.chevronRight('w-5 h-5');
+            nextButton.onclick = () => { const newDate = new Date(viewDate); newDate.setMonth(newDate.getMonth() + 1); setState({ calendarViewDate: newDate }); };
+            navButtons.append(prevButton, todayButton, nextButton);
+            header.appendChild(navButtons);
+            const weekdaysContainer = document.createElement('div');
+            weekdaysContainer.className = 'grid grid-cols-7 gap-1 text-center text-xs font-bold mb-2';
+            ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'].forEach(day => { const dayEl = document.createElement('div'); dayEl.textContent = day; dayEl.className = classes.textSecondary; weekdaysContainer.appendChild(dayEl); });
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-7 gap-1';
+            const quotesByDate = quotes.reduce((acc, quote) => { if (quote.eventDate) { const dateKey = new Date(quote.eventDate).toISOString().split('T')[0]; if (!acc[dateKey]) acc[dateKey] = []; acc[dateKey].push(quote); } return acc; }, {});
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const startingDay = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1;
+            for (let i = 0; i < startingDay; i++) { grid.appendChild(createElement('div', ['rounded-md', 'h-20', 'sm:h-24', 'md:h-32'])); }
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayCell = document.createElement('div');
+                const currentDate = new Date(year, month, day);
+                const dateKey = currentDate.toISOString().split('T')[0];
+                const isToday = dateKey === new Date().toISOString().split('T')[0];
+                dayCell.className = `relative p-1 sm:p-1.5 rounded-md h-20 sm:h-24 md:h-32 border ${classes.border} flex flex-col overflow-hidden ${isToday ? `border-2 ${classes.accent}` : ''} ${classes.cardBg}`;
+                dayCell.innerHTML = `<span class="text-xs sm:text-sm font-semibold ${isToday ? classes.accent : ''}">${day}</span>`;
+                const eventsContainer = document.createElement('div');
+                eventsContainer.className = 'mt-1 space-y-1 overflow-y-auto hide-scrollbar';
+                if (quotesByDate[dateKey]) {
+                    quotesByDate[dateKey].forEach(quote => {
+                        const eventEl = document.createElement('div');
+                        eventEl.className = `p-1 rounded-sm text-xs cursor-pointer hover:opacity-80 transition-opacity ${statusColors[quote.status]}`;
+                        eventEl.innerHTML = `<span class="font-bold text-white hidden sm:inline">${quote.customer}</span><span class="font-bold text-white sm:hidden">●</span>`;
+                        eventEl.onclick = (e) => { e.stopPropagation(); setState({ selectedQuoteId: quote.id, formData: { ...quote } }); };
+                        eventsContainer.appendChild(eventEl);
+                    });
+                }
+                dayCell.appendChild(eventsContainer);
+                grid.appendChild(dayCell);
+            }
+            container.append(header, weekdaysContainer, grid);
+            return container;
+        }
+
+        function Toast(toast) {
+            const classes = themes[state.theme];
+            const toastColors = { success: 'bg-green-500', error: 'bg-red-500' };
+            const container = document.createElement('div');
+            container.className = `fixed bottom-5 right-5 z-50 ${toastColors[toast.type]} text-white p-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-scale`;
+            container.appendChild(createElement('p', [], [toast.message]));
+            if (toast.undoable) { const undoButton = document.createElement('button'); undoButton.className = 'font-bold underline'; undoButton.textContent = t('toast.undo'); undoButton.onclick = handleUndoDelete; container.appendChild(undoButton); }
+            if (toast.onRetry) { const retryButton = document.createElement('button'); retryButton.className = 'font-bold underline'; retryButton.textContent = t('toast.retry'); retryButton.onclick = () => { toast.onRetry(); setState({ toast: null }); }; container.appendChild(retryButton); }
+            return container;
+        }
+
+        function ConfirmationModal({ isOpen, title, message, onConfirm, confirmText, confirmButtonClass }) {
+            if (!isOpen) return null;
+            const classes = themes[state.theme];
+            const overlay = document.createElement('div');
+            overlay.className = `fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in-fast ${classes.modalOverlay}`;
+            overlay.onclick = () => setState({ confirmationState: { isOpen: false } });
+            const modalContent = document.createElement('div');
+            modalContent.className = `${classes.cardBg} w-full max-w-md rounded-xl shadow-2xl p-6 animate-fade-in-scale`;
+            modalContent.onclick = e => e.stopPropagation();
+            modalContent.innerHTML = `<h2 class="text-xl font-bold mb-2">${title}</h2><p class="${classes.textSecondary} mb-6">${message}</p>`;
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'flex justify-end gap-3';
+            const cancelButton = document.createElement('button');
+            cancelButton.textContent = 'Avbryt';
+            cancelButton.className = `${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-4 py-2 rounded-lg font-semibold transition-colors ${classes.focus}`;
+            cancelButton.onclick = () => setState({ confirmationState: { isOpen: false } });
+            const confirmButton = document.createElement('button');
+            confirmButton.textContent = confirmText;
+            confirmButton.className = `${confirmButtonClass} px-4 py-2 rounded-lg font-semibold transition-colors ${classes.focus}`;
+            confirmButton.onclick = onConfirm;
+            buttonContainer.append(cancelButton, confirmButton);
+            modalContent.appendChild(buttonContainer);
+            overlay.appendChild(modalContent);
+            return overlay;
+        }
+
+        function NordSymHub() {
+            if (!state.isHubOpen) return null;
+            const classes = themes[state.theme];
+            const overlay = document.createElement('div');
+            overlay.className = `fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in-fast ${classes.modalOverlay}`;
+            overlay.onclick = () => setState({ isHubOpen: false });
+            const modalContent = document.createElement('div');
+            modalContent.className = `${classes.cardBg} w-full max-w-md rounded-xl shadow-2xl p-6 animate-fade-in-scale`;
+            modalContent.onclick = e => e.stopPropagation();
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-start mb-4';
+            header.innerHTML = `<div><h2 class="text-xl font-bold">${t('hub.title')}</h2><p class="${classes.textSecondary} text-sm">${t('hub.description')}</p></div>`;
+            const closeButton = document.createElement('button');
+            closeButton.className = `p-2 -mt-2 -mr-2 rounded-full hover:bg-red-500/10 ${classes.focus}`;
+            closeButton.innerHTML = icons.x("w-6 h-6 hover:text-red-500");
+            closeButton.onclick = () => setState({ isHubOpen: false });
+            header.appendChild(closeButton);
+            const createContactRow = (label, value) => {
+                const row = document.createElement('div');
+                const copyButton = document.createElement('button');
+                copyButton.className = `p-2 rounded-md ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} transition-colors ${classes.focus}`;
+                copyButton.innerHTML = icons.copy(classes.textSecondary);
+                copyButton.onclick = () => { navigator.clipboard.writeText(value); showToast(t('hub.copied'), 'success'); };
+                row.innerHTML = `<p class="text-xs ${classes.textSecondary} mb-1">${label}</p><div class="flex items-center gap-2"><p class="p-2 rounded-md ${classes.inputBg} flex-grow font-mono">${value}</p></div>`;
+                row.querySelector('div').appendChild(copyButton);
+                return row;
+            };
+            const contactInfo = document.createElement('div');
+            contactInfo.className = 'space-y-4 my-6';
+            contactInfo.appendChild(createContactRow(t('hub.email'), 'Gustav@nordsym.com'));
+            contactInfo.appendChild(createContactRow(t('hub.phone'), '070-5292583'));
+            const messageArea = document.createElement('div');
+            messageArea.innerHTML = `<textarea placeholder="${t('hub.message_placeholder')}" rows="4" class="w-full p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}"></textarea><button class="w-full mt-2 ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}">${t('hub.send')}</button>`;
+            modalContent.append(header, contactInfo, messageArea);
+            overlay.appendChild(modalContent);
+            return overlay;
+        }
+        
+        function MicroCalendar(onDateSelect) {
+            const classes = themes[state.theme];
+            const container = document.createElement('div');
+            container.className = `absolute z-20 mt-2 ${classes.cardBg} p-2 sm:p-4 rounded-lg shadow-xl border ${classes.border} animate-fade-in-fast w-72`;
+            const viewDate = state.microCalendarDate;
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
+            const selectedDate = new Date(state.formData.eventDate);
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center mb-2';
+            header.innerHTML = `<h4 class="text-sm font-bold ${classes.accent}">${viewDate.toLocaleDateString('sv-SE', { month: 'long', year: 'numeric' })}</h4>`;
+            const navButtons = document.createElement('div');
+            navButtons.className = 'flex items-center gap-1';
+            const prevButton = document.createElement('button');
+            prevButton.className = `p-1 rounded-full ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} ${classes.focus}`;
+            prevButton.innerHTML = icons.chevronLeft('w-4 h-4');
+            prevButton.onclick = (e) => { e.stopPropagation(); const newDate = new Date(viewDate); newDate.setMonth(newDate.getMonth() - 1); setState({ microCalendarDate: newDate }); };
+            const nextButton = document.createElement('button');
+            nextButton.className = `p-1 rounded-full ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} ${classes.focus}`;
+            nextButton.innerHTML = icons.chevronRight('w-4 h-4');
+            nextButton.onclick = (e) => { e.stopPropagation(); const newDate = new Date(viewDate); newDate.setMonth(newDate.getMonth() + 1); setState({ microCalendarDate: newDate }); };
+            navButtons.append(prevButton, nextButton);
+            header.appendChild(navButtons);
+            const weekdaysContainer = document.createElement('div');
+            weekdaysContainer.className = 'grid grid-cols-7 text-center text-xs font-bold mb-2';
+            ['M', 'T', 'O', 'T', 'F', 'L', 'S'].forEach(day => weekdaysContainer.innerHTML += `<div class="${classes.textSecondary}">${day}</div>`);
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-7 gap-1';
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const startingDay = (firstDayOfMonth === 0) ? 6 : firstDayOfMonth - 1;
+            for (let i = 0; i < startingDay; i++) { grid.appendChild(createElement('div')); }
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayBtn = document.createElement('button');
+                const currentDate = new Date(year, month, day);
+                const isSelected = currentDate.toDateString() === selectedDate.toDateString();
+                dayBtn.textContent = day;
+                dayBtn.className = `h-8 w-8 rounded-full text-sm transition-colors ${classes.focus} ${isSelected ? `${classes.buttonPrimaryBg} ${classes.buttonPrimaryText}` : `hover:${classes.inputBg}`}`;
+                dayBtn.onclick = (e) => { e.stopPropagation(); onDateSelect(currentDate); };
+                grid.appendChild(dayBtn);
+            }
+            container.append(header, weekdaysContainer, grid);
+            return container;
+        }
+
+        function TimePicker(initialTime, onTimeSelect) {
+            const classes = themes[state.theme];
+            const overlay = document.createElement('div');
+            overlay.className = `fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in-fast ${classes.modalOverlay}`;
+            overlay.onclick = () => setState({ isTimePickerOpen: false });
+            const container = document.createElement('div');
+            container.className = `relative ${classes.cardBg} p-4 rounded-lg shadow-xl border ${classes.border} w-48 animate-fade-in-scale`;
+            container.onclick = e => e.stopPropagation();
+            const [initialHour, initialMinute] = (initialTime || "12:00").split(':').map(Number);
+            const timeScroller = document.createElement('div');
+            timeScroller.className = 'flex justify-center items-center h-48 gap-2';
+            const createColumn = (max, initialValue) => {
+                const column = document.createElement('div');
+                column.className = 'w-16 h-full overflow-y-scroll hide-scrollbar text-center text-2xl time-picker-column';
+                for (let i = 0; i < max; i++) {
+                    const el = document.createElement('div');
+                    el.className = 'h-12 flex items-center justify-center';
+                    el.textContent = i.toString().padStart(2, '0');
+                    column.appendChild(el);
+                }
+                setTimeout(() => { column.scrollTop = initialValue * 48; }, 0);
+                return column;
+            };
+            const hourCol = createColumn(24, initialHour);
+            const minuteCol = createColumn(60, initialMinute);
+            timeScroller.append(hourCol, createElement('span', ['text-2xl'], [':']), minuteCol);
+            const setBtn = document.createElement('button');
+            setBtn.className = `mt-4 w-full ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} py-2 rounded-lg font-semibold`;
+            setBtn.textContent = 'Sätt tid';
+            setBtn.onclick = () => {
+                const hour = Math.round(hourCol.scrollTop / 48).toString().padStart(2, '0');
+                const minute = Math.round(minuteCol.scrollTop / 48).toString().padStart(2, '0');
+                onTimeSelect(`${hour}:${minute}`);
+            };
+            container.append(timeScroller, setBtn);
+            overlay.appendChild(container);
+            return overlay;
+        }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- EDIT MODAL KOMPONENT ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        
+        const STANDARD_DIETS = [ { key: 'vegetarian', label: 'Vegetariskt' }, { key: 'vegan', label: 'Veganskt' }, { key: 'glutenFree', label: 'Glutenfritt' }, { key: 'lactoseFree', label: 'Laktosfritt' }, { key: 'nutAllergy', label: 'Nötallergi' } ];
+
+        function EditModal() {
+            const { formData } = state;
+            if (!formData) return null;
+
+            const classes = themes[state.theme];
+            const modalOverlay = document.createElement('div');
+            modalOverlay.id = 'edit-modal-overlay';
+            modalOverlay.className = `fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 animate-fade-in-fast ${classes.modalOverlay}`;
+            modalOverlay.onclick = (e) => { if(e.target === modalOverlay) setState({ selectedQuoteId: null, formData: null, isMicroCalendarOpen: false, isTimePickerOpen: false }); };
+
+            const modalContent = document.createElement('div');
+            modalContent.id = 'edit-modal-content';
+            modalContent.className = `${classes.cardBg} w-full max-w-5xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col`;
+            modalContent.onclick = (e) => e.stopPropagation();
+
+            const header = document.createElement('header');
+            header.className = `p-4 border-b ${classes.border} flex justify-between items-center flex-shrink-0`;
+            header.innerHTML = `<h2 class="text-xl md:text-2xl font-bold">${t('modal.edit_title')}: <span class="${classes.accent}">${formData.id}</span></h2>`;
+            const closeButton = document.createElement('button');
+            closeButton.className = `p-2 rounded-full hover:bg-red-500/10 ${classes.focus}`;
+            closeButton.innerHTML = icons.x("w-6 h-6 hover:text-red-500");
+            closeButton.onclick = () => setState({ selectedQuoteId: null, formData: null, isMicroCalendarOpen: false, isTimePickerOpen: false });
+            header.appendChild(closeButton);
+
+            const main = document.createElement('main');
+            main.className = 'p-4 md:p-6 overflow-y-auto flex-grow hide-scrollbar';
+
+            const updatePriceDisplay = () => {
+                const priceBreakdown = calculateTotal(state.formData);
+                const totalDisplay = document.getElementById('modal-total-display');
+                const vatDisplay = document.getElementById('modal-vat-display');
+                if (totalDisplay) totalDisplay.textContent = priceBreakdown.finalTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+                if (vatDisplay) {
+                    const subTotalFormatted = priceBreakdown.subTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+                    const vatFormatted = priceBreakdown.vat.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+                    vatDisplay.textContent = `(${subTotalFormatted} + ${vatFormatted} moms)`;
+                }
+            };
+
+            const updateLiveFormData = (key, value) => { state.formData[key] = value; updatePriceDisplay(); };
+            const updateNestedFormData = (arrayName, id, field, value) => { const item = state.formData[arrayName].find(i => i.id === id); if (item) item[field] = value; updateLiveFormData(arrayName, state.formData[arrayName]); };
+            
+            const createInputGroup = (label, name, value, type = 'text', onInput, extraClasses = '') => { const div = document.createElement('div'); div.className = extraClasses; div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label>`; const input = document.createElement('input'); input.type = type; input.name = name; input.value = value || ''; if (type === 'number') input.step = 'any'; input.className = `w-full p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`; input.oninput = (e) => onInput(name, type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value); div.appendChild(input); return div; };
+            const createTextareaGroup = (label, name, value, onInput, rows = 3) => { const div = document.createElement('div'); div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label>`; const textarea = document.createElement('textarea'); textarea.name = name; textarea.value = value || ''; textarea.rows = rows; textarea.className = `w-full p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`; textarea.oninput = (e) => onInput(name, e.target.value); div.appendChild(textarea); return div; };
+            const createSelectGroup = (label, name, value, options, onInput) => { const div = document.createElement('div'); div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label>`; const select = document.createElement('select'); select.name = name; select.className = `w-full p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`; select.onchange = (e) => onInput(name, e.target.value); options.forEach(opt => { const optionEl = document.createElement('option'); optionEl.value = opt.value; optionEl.textContent = opt.label; if (opt.value === value) optionEl.selected = true; select.appendChild(optionEl); }); div.appendChild(select); return div; };
+            const createReadonlyGroup = (label, value) => { const div = document.createElement('div'); div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label><p class="w-full p-2 rounded-lg ${classes.inputBg} ${classes.textSecondary} border ${classes.border} min-h-[38px]">${value || '–'}</p>`; return div; };
+
+            const createCheckboxWithNumber = (label, dietKey, dietData) => {
+                const div = document.createElement('div'); div.className = 'flex items-center gap-4';
+                const checkboxDiv = document.createElement('div'); checkboxDiv.className = 'flex items-center gap-2';
+                const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+                const id = `diet-${dietKey}-${formData.id}`; checkbox.id = id; checkbox.name = id; checkbox.checked = dietData?.selected || false; checkbox.className = `h-4 w-4 rounded ${classes.border} text-cyan-600 focus:ring-cyan-500`;
+                const labelEl = document.createElement('label'); labelEl.setAttribute('for', id); labelEl.className = 'text-sm'; labelEl.textContent = label;
+                checkboxDiv.append(checkbox, labelEl);
+                const numberInput = document.createElement('input'); numberInput.type = 'number'; numberInput.name = `count-${dietKey}`; numberInput.value = dietData?.count || ''; numberInput.placeholder = 'Antal'; numberInput.className = `w-24 p-1 rounded-md text-sm ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus} ${!checkbox.checked ? 'opacity-50 cursor-not-allowed' : ''}`; numberInput.disabled = !checkbox.checked;
+                const updateDietState = (field, value) => { if (!state.formData.standardDiets) state.formData.standardDiets = {}; if (!state.formData.standardDiets[dietKey]) state.formData.standardDiets[dietKey] = {}; state.formData.standardDiets[dietKey][field] = value; updateLiveFormData('standardDiets', state.formData.standardDiets); };
+                numberInput.oninput = (e) => { updateDietState('count', e.target.value === '' ? '' : parseInt(e.target.value)); };
+                checkbox.onchange = (e) => { const isChecked = e.target.checked; numberInput.disabled = !isChecked; numberInput.classList.toggle('opacity-50', !isChecked); numberInput.classList.toggle('cursor-not-allowed', !isChecked); updateDietState('selected', isChecked); if (!isChecked) { numberInput.value = ''; updateDietState('count', ''); } };
+                div.append(checkboxDiv, numberInput);
+                return div;
+            };
+
+            const createSection = (title, key, contentGenerator) => {
+                const fieldset = document.createElement('fieldset'); fieldset.className = `border ${classes.border} rounded-lg p-4 mt-6`;
+                const legend = document.createElement('legend'); legend.className = `px-2 font-semibold text-md ${classes.accent} cursor-pointer select-none`;
+                const isOpen = state.openSections[key];
+                legend.innerHTML = `${title} <span class="ml-2 font-mono">${isOpen ? '−' : '+'}</span>`;
+                fieldset.appendChild(legend);
+                const contentDiv = document.createElement('div'); contentDiv.className = `pt-4 transition-all duration-300 ease-in-out ${isOpen ? 'max-h-screen' : 'max-h-0 overflow-hidden pt-0'}`;
+                if(isOpen) contentDiv.appendChild(contentGenerator());
+                fieldset.appendChild(contentDiv);
+                legend.onclick = () => {
+                    state.openSections[key] = !state.openSections[key];
+                    legend.querySelector('span').textContent = state.openSections[key] ? '−' : '+';
+                    contentDiv.classList.toggle('max-h-0');
+                    contentDiv.classList.toggle('max-h-screen');
+                    contentDiv.classList.toggle('pt-0');
+                };
+                return fieldset;
+            };
+
+            main.appendChild(createSection('Kund & Event Information', 'info', () => {
+                const container = document.createElement('div'); container.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4';
+                container.appendChild(createInputGroup('Kundnamn', 'customer', formData.customer, 'text', updateLiveFormData, 'lg:col-span-2'));
+                container.appendChild(createSelectGroup('Kundtyp', 'customerType', formData.customerType, [{label: 'Privat', value: 'privat'}, {label: 'Företag', value: 'foretag'}], updateLiveFormData));
+                container.appendChild(createInputGroup('Kontaktperson', 'contactPerson', formData.contactPerson, 'text', updateLiveFormData));
+                container.appendChild(createInputGroup('Person-/Org.nummer', 'customerIdNumber', formData.customerIdNumber, 'text', updateLiveFormData));
+                container.appendChild(createInputGroup('E-post', 'contactEmail', formData.contactEmail, 'email', updateLiveFormData));
+                container.appendChild(createInputGroup('Telefon', 'contactPhone', formData.contactPhone, 'tel', updateLiveFormData));
+                const addressField = createTextareaGroup('Adress', 'address', formData.address, updateLiveFormData, 2); addressField.className = 'lg:col-span-3'; container.appendChild(addressField);
+                const datePickerContainer = document.createElement('div'); datePickerContainer.className = 'relative';
+                const datePicker = createInputGroup('Eventdatum', 'eventDate', formData.eventDate, 'text', () => {}); datePicker.querySelector('input').readOnly = true; datePicker.querySelector('input').onclick = () => setState({ isMicroCalendarOpen: !state.isMicroCalendarOpen, microCalendarDate: new Date(formData.eventDate || Date.now()) }, {render: 'full'});
+                datePickerContainer.appendChild(datePicker); container.appendChild(datePickerContainer);
+                const startTimePicker = createInputGroup('Starttid', 'eventStartTime', formData.eventStartTime, 'text', () => {}); startTimePicker.querySelector('input').readOnly = true; startTimePicker.querySelector('input').onclick = () => setState({ isTimePickerOpen: true, timePickerTarget: 'eventStartTime'}, {render: 'full'}); container.appendChild(startTimePicker);
+                const endTimePicker = createInputGroup('Sluttid', 'eventEndTime', formData.eventEndTime, 'text', () => {}); endTimePicker.querySelector('input').readOnly = true; endTimePicker.querySelector('input').onclick = () => setState({ isTimePickerOpen: true, timePickerTarget: 'eventEndTime'}, {render: 'full'}); container.appendChild(endTimePicker);
+                container.appendChild(createInputGroup('Antal gäster', 'guestCount', formData.guestCount, 'number', updateLiveFormData));
+                container.appendChild(createInputGroup('Pris per kuvert (SEK)', 'pricePerGuest', formData.pricePerGuest, 'number', updateLiveFormData));
+                container.appendChild(createInputGroup('Eventplats', 'eventLocation', formData.eventLocation, 'text', updateLiveFormData));
+                container.appendChild(createInputGroup('Eventtyp', 'eventType', formData.eventType, 'text', updateLiveFormData));
+                const customerRequests = createTextareaGroup('Kundens önskemål', 'customerRequests', formData.customerRequests, updateLiveFormData, 4); customerRequests.className = 'md:col-span-2 lg:col-span-3'; container.appendChild(customerRequests);
+                return container;
+            }));
+
+            main.appendChild(createSection('Meny & Beskrivning', 'menu', () => createTextareaGroup('Menybeskrivning', 'menuDescription', formData.menuDescription, updateLiveFormData, 6)));
+            
+            main.appendChild(createSection('Personal & Kostnader', 'costs', () => {
+                const container = document.createElement('div'); container.className = 'space-y-4';
+                const staffGrid = document.createElement('div'); staffGrid.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4';
+                staffGrid.appendChild(createInputGroup('Antal kockar', 'numChefs', formData.numChefs, 'number', updateLiveFormData));
+                staffGrid.appendChild(createInputGroup('Kostnad Kockar', 'chefCost', formData.chefCost, 'number', updateLiveFormData));
+                staffGrid.appendChild(createInputGroup('Antal servitörer', 'numServingStaff', formData.numServingStaff, 'number', updateLiveFormData));
+                staffGrid.appendChild(createInputGroup('Kostnad Servitörer', 'servingStaffCost', formData.servingStaffCost, 'number', updateLiveFormData));
+                container.appendChild(staffGrid);
+                const customCostsContainer = document.createElement('div'); customCostsContainer.className = 'space-y-2'; customCostsContainer.id = 'custom-costs-container';
+                (formData.customCosts || []).forEach(cost => {
+                    const itemRow = document.createElement('div'); itemRow.className = 'flex items-center gap-2'; itemRow.id = `cost-row-${cost.id}`;
+                    const descInput = createInputGroup('', `desc-${cost.id}`, cost.description, 'text', (_, val) => updateNestedFormData('customCosts', cost.id, 'description', val), 'flex-grow');
+                    const amountInput = createInputGroup('', `amount-${cost.id}`, cost.amount, 'number', (_, val) => updateNestedFormData('customCosts', cost.id, 'amount', val), 'w-32');
+                    const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash();
+                    deleteBtn.onclick = () => { state.formData.customCosts = state.formData.customCosts.filter(c => c.id !== cost.id); itemRow.remove(); updateLiveFormData('customCosts', state.formData.customCosts); };
+                    itemRow.append(descInput, amountInput, deleteBtn); customCostsContainer.appendChild(itemRow);
+                });
+                container.appendChild(customCostsContainer);
+                const addCostButton = document.createElement('button'); addCostButton.className = `text-sm font-semibold ${classes.accent} hover:underline ${classes.focus}`; addCostButton.innerHTML = `${icons.plus('inline-block -mt-1')} Lägg till kostnad`;
+                addCostButton.onclick = () => { const newId = 'c-' + Date.now(); if(!state.formData.customCosts) state.formData.customCosts = []; state.formData.customCosts.push({ id: newId, description: '', amount: '' }); const newRow = document.createElement('div'); newRow.className = 'flex items-center gap-2'; newRow.id = `cost-row-${newId}`; const descInput = createInputGroup('', `desc-${newId}`, '', 'text', (_, val) => updateNestedFormData('customCosts', newId, 'description', val), 'flex-grow'); const amountInput = createInputGroup('', `amount-${newId}`, '', 'number', (_, val) => updateNestedFormData('customCosts', newId, 'amount', val), 'w-32'); const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash(); deleteBtn.onclick = () => { state.formData.customCosts = state.formData.customCosts.filter(c => c.id !== newId); newRow.remove(); updateLiveFormData('customCosts', state.formData.customCosts); }; newRow.append(descInput, amountInput, deleteBtn); customCostsContainer.appendChild(newRow); };
+                container.appendChild(addCostButton);
+                const discountInput = createInputGroup('Rabatt (SEK)', 'discountAmount', formData.discountAmount, 'number', updateLiveFormData, 'pt-4 border-t mt-4 border-dashed'); container.appendChild(discountInput);
+                return container;
+            }));
+
+            main.appendChild(createSection('Specialkost & Allergener', 'diets', () => {
+                const container = document.createElement('div'); container.className = 'space-y-4';
+                const standardDietsGrid = document.createElement('div'); standardDietsGrid.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+                STANDARD_DIETS.forEach(diet => { const dietData = formData.standardDiets ? formData.standardDiets[diet.key] : {}; standardDietsGrid.appendChild(createCheckboxWithNumber(diet.label, diet.key, dietData)); });
+                container.appendChild(standardDietsGrid);
+                const customDietsContainer = document.createElement('div'); customDietsContainer.className = 'space-y-2 pt-4 border-t mt-4 border-dashed'; customDietsContainer.id = 'custom-diets-container';
+                (formData.customDiets || []).forEach(diet => {
+                    const itemRow = document.createElement('div'); itemRow.className = 'flex items-center gap-2'; itemRow.id = `diet-row-${diet.id}`;
+                    const descInput = createInputGroup('', `diet-desc-${diet.id}`, diet.description, 'text', (_, val) => updateNestedFormData('customDiets', diet.id, 'description', val), 'flex-grow');
+                    const countInput = createInputGroup('', `diet-count-${diet.id}`, diet.count, 'number', (_, val) => updateNestedFormData('customDiets', diet.id, 'count', val), 'w-32');
+                    const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash();
+                    deleteBtn.onclick = () => { state.formData.customDiets = state.formData.customDiets.filter(d => d.id !== diet.id); itemRow.remove(); updateLiveFormData('customDiets', state.formData.customDiets); };
+                    itemRow.append(descInput, countInput, deleteBtn); customDietsContainer.appendChild(itemRow);
+                });
+                container.appendChild(customDietsContainer);
+                const addDietButton = document.createElement('button'); addDietButton.className = `text-sm font-semibold ${classes.accent} hover:underline ${classes.focus}`; addDietButton.innerHTML = `${icons.plus('inline-block -mt-1')} Lägg till specialkost`;
+                addDietButton.onclick = () => { const newId = 'd-' + Date.now(); if(!state.formData.customDiets) state.formData.customDiets = []; state.formData.customDiets.push({ id: newId, description: '', count: '' }); const newRow = document.createElement('div'); newRow.className = 'flex items-center gap-2'; newRow.id = `diet-row-${newId}`; const descInput = createInputGroup('', `diet-desc-${newId}`, '', 'text', (_, val) => updateNestedFormData('customDiets', newId, 'description', val), 'flex-grow'); const countInput = createInputGroup('', `diet-count-${newId}`, '', 'number', (_, val) => updateNestedFormData('customDiets', newId, 'count', val), 'w-32'); const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash(); deleteBtn.onclick = () => { state.formData.customDiets = state.formData.customDiets.filter(d => d.id !== newId); newRow.remove(); updateLiveFormData('customDiets', state.formData.customDiets); }; newRow.append(descInput, countInput, deleteBtn); customDietsContainer.appendChild(newRow); };
+                container.appendChild(addDietButton);
+                return container;
+            }));
+            
+            main.appendChild(createSection('Interna Noteringar & Händelselogg', 'internal', () => {
+                const container = document.createElement('div'); container.className = 'space-y-4';
+                container.appendChild(createTextareaGroup('Interna Noteringar', 'internalComment', formData.internalComment, updateLiveFormData, 4));
+                const logContainer = document.createElement('div'); logContainer.className = 'text-xs space-y-1';
+                (formData.events || []).slice().reverse().forEach(event => { logContainer.innerHTML += `<p><span class="font-mono ${classes.textSecondary}">${formatTimestamp(event.timestamp)}:</span> ${event.event}</p>`; });
+                container.appendChild(logContainer);
+                return container;
+            }));
+
+            main.appendChild(createSection('Systemdata (skrivskyddad)', 'system', () => {
+                const container = document.createElement('div'); container.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+                container.appendChild(createReadonlyGroup('Förslag skickat datum', formData.sentDate));
+                const aiLog = createTextareaGroup('AI Agent Rådata', 'aiRawLog', formData.aiRawLog, () => {}, 5);
+                aiLog.querySelector('textarea').readOnly = true;
+                aiLog.className = 'md:col-span-2';
+                container.appendChild(aiLog);
+                return container;
+            }));
+
+            const footer = document.createElement('footer');
+            footer.className = `p-4 border-t ${classes.border} flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0`;
+            const leftFooter = document.createElement('div');
+            leftFooter.className = 'flex items-center gap-4';
+            leftFooter.innerHTML = `<button id="delete-btn" class="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}" title="Radera ärende">${icons.trash()}</button><button id="copy-btn" class="${classes.accent} hover:text-cyan-500 text-sm font-semibold ${classes.focus}">Kopiera Ärende</button>`;
+            leftFooter.querySelector('#delete-btn').onclick = () => requestDeleteConfirmation(formData);
+            leftFooter.querySelector('#copy-btn').onclick = () => handleCopyQuote(formData);
+            
+            const rightFooter = document.createElement('div');
+            rightFooter.className = 'flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto';
+            
+            const priceContainer = document.createElement('div');
+            priceContainer.className = 'text-right';
+            const priceBreakdown = calculateTotal(formData);
+            const totalDisplay = document.createElement('p');
+            totalDisplay.id = 'modal-total-display';
+            totalDisplay.className = `font-bold text-xl ${classes.accent}`;
+            totalDisplay.textContent = priceBreakdown.finalTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+            const vatDisplay = document.createElement('p');
+            vatDisplay.id = 'modal-vat-display';
+            vatDisplay.className = `text-xs ${classes.textSecondary}`;
+            const subTotalFormatted = priceBreakdown.subTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+            const vatFormatted = priceBreakdown.vat.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+            vatDisplay.textContent = `(${subTotalFormatted} + ${vatFormatted} moms)`;
+            priceContainer.append(totalDisplay, vatDisplay);
+
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.className = 'flex gap-2 w-full sm:w-auto';
+            const exportButton = document.createElement('button');
+            exportButton.className = `w-full sm:w-auto ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-3 py-2 text-sm rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${classes.focus}`;
+            exportButton.innerHTML = `${icons.filePdf()} Exportera`;
+            exportButton.onclick = () => generateQuotePdf(formData);
+            const saveButton = document.createElement('button');
+            saveButton.className = `w-full sm:w-auto ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
+            saveButton.textContent = 'Spara';
+            saveButton.onclick = () => handleSaveQuote(formData);
+            const actionButton = document.createElement('button');
+            actionButton.className = `w-full sm:w-auto px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
+            if (formData.status === 'utkast') { actionButton.textContent = 'Skicka Förslag'; actionButton.className += ` ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover}`; actionButton.onclick = () => requestSendConfirmation(formData); }
+            else if (formData.status === 'förslag-skickat') { actionButton.textContent = 'Godkänn Förslag'; actionButton.className += ' bg-green-500 text-white hover:bg-green-600'; actionButton.onclick = () => requestApproveConfirmation(formData); }
+            else { actionButton.textContent = 'Åtgärd'; actionButton.className += ` ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} opacity-50 cursor-not-allowed`; actionButton.disabled = true; }
+            buttonsContainer.append(exportButton, saveButton, actionButton);
+            rightFooter.append(priceContainer, buttonsContainer);
+            footer.append(leftFooter, rightFooter);
+            
+            // RACE CONDITION FIX: Lägg till laddnings-overlay
+            if (state.isSaving) {
+                const savingOverlay = document.createElement('div');
+                savingOverlay.className = 'absolute inset-0 bg-white/70 dark:bg-gray-800/70 flex items-center justify-center rounded-xl';
+                savingOverlay.innerHTML = `<div class="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin-fast"></div>`;
+                modalContent.appendChild(savingOverlay);
+                modalContent.querySelectorAll('input, textarea, button, select').forEach(el => el.disabled = true);
+            }
+
+            modalContent.append(header, main, footer);
+            
+            if (state.isMicroCalendarOpen) {
+                const datePickerContainer = main.querySelector('input[name="eventDate"]').parentElement;
+                datePickerContainer.appendChild(MicroCalendar((date) => { updateLiveFormData('eventDate', date.toISOString().split('T')[0]); setState({ isMicroCalendarOpen: false }, { render: 'full' }); }));
+            }
+            if (state.isTimePickerOpen) {
+                modalOverlay.appendChild(TimePicker(formData[state.timePickerTarget], (time) => { updateLiveFormData(state.timePickerTarget, time); setState({ isTimePickerOpen: false, timePickerTarget: null }, { render: 'full' }); }));
+            }
+            modalOverlay.appendChild(modalContent);
+            return modalOverlay;
+        }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- HUVUD-RENDERINGSFUNKTION ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        function renderApp() {
+            appRoot.innerHTML = '';
+            const classes = themes[state.theme];
+            document.documentElement.className = classes.htmlClass;
+            document.body.className = `${classes.bg} ${classes.text}`;
+
+            const isModalOpen = state.selectedQuoteId || state.confirmationState.isOpen || state.isHubOpen;
+            
+            const mainContentContainer = document.createElement('div');
+            mainContentContainer.className = `flex flex-col h-screen transition-all duration-300 ${isModalOpen && !state.isSaving ? 'filter blur-md' : ''}`;
+            
+            if (!state.isLoggedIn) {
+                mainContentContainer.appendChild(SimpleLoginScreen());
+            } else {
+                mainContentContainer.appendChild(Header());
+                mainContentContainer.appendChild(MainNav());
+                const main = document.createElement('main');
+                main.className = 'flex-grow overflow-y-auto';
+                if (state.activeView === 'quotes') main.appendChild(QuotesDashboard());
+                else main.innerHTML = `<div class="p-8"><h1 class="text-3xl font-bold">Sektion under utveckling</h1></div>`;
+                mainContentContainer.appendChild(main);
+            }
+            appRoot.appendChild(mainContentContainer);
+
+            if (state.selectedQuoteId) {
+                 appRoot.appendChild(EditModal());
+            }
+            
+            const confirmationModal = ConfirmationModal(state.confirmationState);
+            if (confirmationModal) appRoot.appendChild(confirmationModal);
+            const hub = NordSymHub();
+            if (hub) appRoot.appendChild(hub);
+            if (state.toast) appRoot.appendChild(Toast(state.toast));
+        }
+        
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // --- INITIALISERING ---
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        async function loadInitialData() {
+            setState({ isLoading: true });
+            try {
+                const quotesFromApi = await dataService.getQuotes();
+                setState({ quotes: quotesFromApi, isLoading: false });
+            } catch (error) {
+                console.error("Failed to load initial data:", error);
+                setState({ isLoading: false });
+                showToast("Kunde inte ladda data från server.", 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderApp();
+        });
+
+    </script>
+</body>
+</html>
