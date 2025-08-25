@@ -177,7 +177,7 @@
             async getQuotes() { const response = await this.adapter.get(N8N_ENDPOINTS.GET_QUOTES); return response.quotes.map(transformN8nQuoteToPortalQuote); }
             async saveQuote(quoteData) { 
                 const n8nPayload = transformPortalQuoteToN8nQuote(quoteData); 
-                console.log('🔬 PRE-FLIGHT PAYLOAD VALIDATION:', JSON.stringify(n8nPayload, null, 2));
+                console.log('🔬 PRE-FLIGHT PAYLOAD VALIDATION:', n8nPayload);
                 return this.adapter.post(N8N_ENDPOINTS.SAVE_QUOTE, n8nPayload); 
             }
             async sendQuoteEmail(emailData) { return this.adapter.post(N8N_ENDPOINTS.SEND_EMAIL, emailData); }
@@ -242,7 +242,14 @@
         }
 
         function transformN8nQuoteToPortalQuote(n8nQuote) {
+            // PRODUCTION FIX: recordId är det absolut viktigaste fältet för att kunna uppdatera.
+            // Vi prioriterar det och varnar i konsolen om det saknas för ett existerande ärende.
             const recordId = n8nQuote.recordId || n8nQuote.recordID || null;
+            const offertId = n8nQuote.offertId || n8nQuote.OffertID || null;
+
+            if (!recordId && offertId) {
+                console.warn(`[Data Integrity Warning] Quote ${offertId} loaded from backend without a recordId. Update operations will fail for this item.`);
+            }
             
             const standardDiets = {
                 vegetarian: { selected: n8nQuote.hasVegetarian || false, count: n8nQuote.numVegetarian || '' },
@@ -253,8 +260,8 @@
             };
 
             const quoteObject = {
-                // KRITISK FIX: Letar efter alla kända varianter av ID och namn.
-                id: n8nQuote.offertId || n8nQuote.OffertID || `GULDKANT-${Date.now()}`,
+                // PRODUCTION FIX: Använd alltid backend-ID. Fallback till temporärt ID är inte längre nödvändigt.
+                id: offertId,
                 recordId: recordId,
                 status: normalizeStatus(n8nQuote.status),
                 customer: n8nQuote.customerName || n8nQuote['Customer Name'] || n8nQuote.kundNamn || '',
@@ -299,14 +306,14 @@
         function transformPortalQuoteToN8nQuote(portalQuote) {
             const priceBreakdown = calculateTotal(portalQuote);
             
-            let finalOffertId = portalQuote.id;
-            if (finalOffertId && finalOffertId.startsWith('GK-')) {
-                finalOffertId = finalOffertId.replace('GK-', 'GULDKANT-');
-            }
+            // PRODUCTION FIX: Skicka ALDRIG ett frontend-genererat ID till backend.
+            // Om ID:t är temporärt (börjar med 'new-'), skicka null så att backend vet att det ska skapa ett nytt ID.
+            // `recordId` är nu den enda källan till sanning för att identifiera en befintlig post.
+            const isNewQuote = !portalQuote.recordId;
 
             const payload = {
-                recordId: portalQuote.recordId || null,
-                offertId: finalOffertId,
+                recordId: portalQuote.recordId, // Blir `null` för nya ärenden, vilket indikerar CREATE.
+                offertId: isNewQuote ? null : portalQuote.id, // Skicka bara med ID för befintliga ärenden.
                 status: portalQuote.status,
                 customerName: portalQuote.customer,
                 customerType: portalQuote.customerType,
@@ -405,7 +412,7 @@
         // --- LOGIK-HANTERARE & PDF-GENERATOR ---
         // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         const statusTextMap = { 'utkast': t('status.utkast'), 'förslag-skickat': t('status.förslag-skickat'), 'godkänd': t('status.godkänd'), 'genomförd': t('status.genomförd'), 'betald': t('status.betald'), 'förlorad': t('status.förlorad'), 'arkiverad': t('status.arkiverad') };
-        const statusColors = { utkast: 'bg-yellow-500', 'förslag-skickat': 'bg-blue-500', godkänd: 'bg-green-500', genomförd: 'bg-blue-700', betald: 'bg-emerald-500', förlorad: 'bg-red-500', arkiverad: 'bg-gray-500' };
+        const statusColors = { utkast: 'bg-yellow-500', 'förslag-skickat': 'bg-blue-500', godkänd: 'bg-green-500', genomförd: 'bg-blue-700', betald: 'bg-purple-500', förlorad: 'bg-red-500', arkiverad: 'bg-gray-500' };
         let toastTimer = null;
 
         function showToast(message, type = 'success', options = {}) {
@@ -437,47 +444,67 @@
 
             try {
                 await dataService.saveQuote(withTotal);
-                showToast(`Ärende ${withTotal.id} har sparats.`, 'success');
-                await loadInitialData(); // Hämta ny data
-                setState({ isSaving: false, selectedQuoteId: null, formData: null }); // Stäng modalen först efter allt är klart
+                showToast(`Ärende ${withTotal.id || 'Nytt ärende'} har sparats.`, 'success');
+                await loadInitialData(); // Hämta ny data för att få korrekta ID:n från servern
+                setState({ isSaving: false, selectedQuoteId: null, formData: null });
             } catch (error) {
                 console.error("Save Error:", error);
-                // Återställ inte formuläret vid fel, så användaren kan försöka igen.
                 setState({ isSaving: false }); 
-                showToast(`Sparning av ärende ${withTotal.id} misslyckades.`, 'error', {
+                showToast(`Sparning av ärende ${withTotal.id || ''} misslyckades.`, 'error', {
                     onRetry: () => handleSaveQuote(updatedQuote)
                 });
             }
         }
 
         function handleStatusChange(quoteToUpdate, newStatus, eventMessage) {
+            // PRODUCTION FIX: Om recordId saknas kan vi inte spara. Avbryt och varna.
+            if (!quoteToUpdate.recordId) {
+                console.error("CRITICAL: Attempted to change status on a quote with no recordId.", quoteToUpdate);
+                showToast(`Kan inte ändra status. Ärendet saknar server-ID.`, 'error');
+                return;
+            }
+
             const defaultEventMessage = `Status manuellt ändrad till "${statusTextMap[newStatus]}".`;
             const newEvent = { timestamp: new Date().toISOString(), event: eventMessage || defaultEventMessage };
             const updatedQuote = { ...quoteToUpdate, status: newStatus, events: [...(quoteToUpdate.events || []), newEvent] };
             
+            // PRODUCTION FIX: Spara original-state för rollback vid fel.
+            const originalQuotes = JSON.parse(JSON.stringify(state.quotes));
+            
+            // Optimistisk UI-uppdatering
             const optimisticQuotes = state.quotes.map(q => q.id === updatedQuote.id ? updatedQuote : q);
             setState({ quotes: optimisticQuotes }, { render: 'full' });
             
-            showToast(t('toast.status_changed', { status: statusTextMap[newStatus] }), 'success');
+            showToast(t('toast.status_changed', { status: statusTextMap[newStatus] }), 'info');
             
             dataService.saveQuote(updatedQuote)
-                .then(() => console.log(`Status change for ${updatedQuote.id} saved successfully.`))
+                .then(() => {
+                    console.log(`Status change for ${updatedQuote.id} (${updatedQuote.recordId}) saved successfully.`);
+                    // Vi behöver inte göra något här, eftersom vi laddar om all data efter varje lyckad save.
+                    // För en ännu snabbare känsla kan man lita på den optimistiska uppdateringen, men full reload är säkrare.
+                    loadInitialData();
+                })
                 .catch(error => {
                     console.error("Save Error on status change:", error);
-                    setState({ quotes: state.quotes.map(q => q.id === updatedQuote.id ? quoteToUpdate : q) });
-                    showToast(`Kunde inte spara statusändring för ${updatedQuote.id}.`, 'error');
+                    // PRODUCTION FIX: Implementera rollback
+                    showToast(`Kunde inte spara statusändring för ${updatedQuote.id}. Återställer.`, 'error');
+                    setState({ quotes: originalQuotes }); // Återställ till state innan ändringen
                 });
         }
 
         function handleNewQuote() { 
+            // PRODUCTION FIX: Generera ALDRIG ett permanent ID på klienten.
+            // Använd ett temporärt ID för state-hantering och sätt recordId till null
+            // för att signalera att detta är ett nytt ärende.
+            const tempId = `new-quote-${Date.now()}`;
             const newQuoteData = { 
-                id: `GULDKANT-${Date.now()}`, 
-                recordId: null, 
+                id: tempId, // Temporärt ID, används bara i UI
+                recordId: null, // Detta är nyckeln! Null betyder "skapa ny".
                 status: 'utkast', 
                 customer: '', 
                 customerType: 'privat', 
                 eventDate: new Date().toISOString().split('T')[0], 
-                events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat' }], 
+                events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat i portalen' }], 
                 customCosts: [], 
                 customDiets: [], 
                 standardDiets: {}, 
@@ -486,7 +513,7 @@
             setState({ selectedQuoteId: newQuoteData.id, formData: newQuoteData }); 
         }
 
-        function handleCopyQuote(quoteToCopy) { const newQuoteData = { ...JSON.parse(JSON.stringify(quoteToCopy)), id: `GULDKANT-${Date.now()}`, recordId: null, status: 'utkast', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: `Kopia från ${quoteToCopy.id}.` }] }; delete newQuoteData.total; handleSaveQuote(newQuoteData); showToast(t('toast.copied'), 'success'); }
+        function handleCopyQuote(quoteToCopy) { const newQuoteData = { ...JSON.parse(JSON.stringify(quoteToCopy)), id: `new-quote-${Date.now()}`, recordId: null, status: 'utkast', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: `Kopia från ${quoteToCopy.id}.` }] }; delete newQuoteData.total; handleSaveQuote(newQuoteData); showToast(t('toast.copied'), 'success'); }
         function handleDeleteQuote(quoteToDelete) { setState({ lastDeleted: quoteToDelete, quotes: state.quotes.filter(q => q.id !== quoteToDelete.id), selectedQuoteId: null, formData: null, }); showToast(t('toast.deleted', {id: quoteToDelete.id}), 'success', { undoable: true }); }
         function handleUndoDelete() { if (state.lastDeleted) { const newQuotes = [...state.quotes, state.lastDeleted].sort((a,b) => new Date(b.events[0]?.timestamp) - new Date(a.events[0]?.timestamp)); setState({ quotes: newQuotes, lastDeleted: null, toast: null }); clearTimeout(toastTimer); } }
         
@@ -680,7 +707,7 @@
         
         function QuoteCard(quote) {
             const classes = themes[state.theme];
-            const statusBorderColor = { utkast: 'border-l-yellow-500', 'förslag-skickat': 'border-l-blue-500', 'godkänd': 'border-l-green-500', 'genomförd': 'border-l-blue-700', 'betald': 'border-l-emerald-500', 'förlorad': 'border-l-red-500', 'arkiverad': 'border-l-gray-500' };
+            const statusBorderColor = { utkast: 'border-l-yellow-500', 'förslag-skickat': 'border-l-blue-500', 'godkänd': 'border-l-green-500', 'genomförd': 'border-l-blue-700', 'betald': 'border-l-purple-500', 'förlorad': 'border-l-red-500', 'arkiverad': 'border-l-gray-500' };
             const card = document.createElement('div');
             card.tabIndex = 0;
             card.className = `${classes.cardBg} rounded-lg shadow-lg p-4 md:p-5 border ${classes.border} ${statusBorderColor[quote.status] || 'border-l-gray-700'} border-l-4 transition-all duration-300 flex flex-col justify-between hover:ring-2 hover:scale-[1.02] focus-within:ring-2 focus-within:ring-cyan-500/50 ${classes.focus}`;
@@ -728,7 +755,7 @@
             topRow.append(searchInput, rightSideContainer);
             const filterRow = document.createElement('div');
             filterRow.className = 'flex flex-wrap gap-2';
-            const filters = [ { id: 'prioriterade', label: t('controls.prioritized') }, { id: 'aktiva', label: t('controls.active') }, { id: 'utkast', label: t('status.utkast') }, { id: 'förslag-skickat', label: t('status.förslag-skickat') }, { id: 'godkänd', label: t('status.godkänd') }, { id: 'genomförd', label: t('status.genomförd') }, { id: 'betald', label: t('status.betald') }, { id: 'förlorad', label: t('status.förlorad') }, { id: 'arkiverad', label: t('status.arkiverad') } ];
+            const filters = [ { id: 'prioriterade', label: t('controls.prioritized') }, { id: 'aktiva', label: t('controls.active') }, { id: 'utkast', label: t('status.utkast') }, { id: 'förslag-skickat', label: t('status.förslag-skickat') }, { id: 'godkänd', label: t('status.godkänd') }, { id: 'genomförd', label: t('status.genomförd') }, { id: 'förlorad', label: t('status.förlorad') }, { id: 'arkiverad', label: t('status.arkiverad') } ];
             filters.forEach(f => {
                 const button = document.createElement('button');
                 button.textContent = f.label;
@@ -907,7 +934,7 @@
 
         function Toast(toast) {
             const classes = themes[state.theme];
-            const toastColors = { success: 'bg-green-500', error: 'bg-red-500' };
+            const toastColors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
             const container = document.createElement('div');
             container.className = `fixed bottom-5 right-5 z-50 ${toastColors[toast.type]} text-white p-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-scale`;
             container.appendChild(createElement('p', [], [toast.message]));
@@ -1087,7 +1114,7 @@
 
             const header = document.createElement('header');
             header.className = `p-4 border-b ${classes.border} flex justify-between items-center flex-shrink-0`;
-            header.innerHTML = `<h2 class="text-xl md:text-2xl font-bold">${t('modal.edit_title')}: <span class="${classes.accent}">${formData.id}</span></h2>`;
+            header.innerHTML = `<h2 class="text-xl md:text-2xl font-bold">${formData.recordId ? t('modal.edit_title') : 'Skapa Nytt Ärende'}: <span class="${classes.accent}">${formData.recordId ? formData.id : 'Nytt'}</span></h2>`;
             const closeButton = document.createElement('button');
             closeButton.className = `p-2 rounded-full hover:bg-red-500/10 ${classes.focus}`;
             closeButton.innerHTML = icons.x("w-6 h-6 hover:text-red-500");
@@ -1232,6 +1259,7 @@
 
             main.appendChild(createSection('Systemdata (skrivskyddad)', 'system', () => {
                 const container = document.createElement('div'); container.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+                container.appendChild(createReadonlyGroup('Airtable Record ID', formData.recordId));
                 container.appendChild(createReadonlyGroup('Förslag skickat datum', formData.sentDate));
                 const aiLog = createTextareaGroup('AI Agent Rådata', 'aiRawLog', formData.aiRawLog, () => {}, 5);
                 aiLog.querySelector('textarea').readOnly = true;
@@ -1273,22 +1301,22 @@
             exportButton.innerHTML = `${icons.filePdf()} Exportera`;
             exportButton.onclick = () => generateQuotePdf(formData);
             const saveButton = document.createElement('button');
-            saveButton.className = `w-full sm:w-auto ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
-            saveButton.textContent = 'Spara';
+            saveButton.className = `w-full sm:w-auto ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
+            saveButton.textContent = formData.recordId ? 'Spara Ändringar' : 'Skapa Ärende';
             saveButton.onclick = () => handleSaveQuote(formData);
             const actionButton = document.createElement('button');
             actionButton.className = `w-full sm:w-auto px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
             if (formData.status === 'utkast') { actionButton.textContent = 'Skicka Förslag'; actionButton.className += ` ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover}`; actionButton.onclick = () => requestSendConfirmation(formData); }
             else if (formData.status === 'förslag-skickat') { actionButton.textContent = 'Godkänn Förslag'; actionButton.className += ' bg-green-500 text-white hover:bg-green-600'; actionButton.onclick = () => requestApproveConfirmation(formData); }
             else { actionButton.textContent = 'Åtgärd'; actionButton.className += ` ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} opacity-50 cursor-not-allowed`; actionButton.disabled = true; }
+            if (!formData.recordId) actionButton.disabled = true; // Can't perform actions on unsaved quote
             buttonsContainer.append(exportButton, saveButton, actionButton);
             rightFooter.append(priceContainer, buttonsContainer);
             footer.append(leftFooter, rightFooter);
             
-            // RACE CONDITION FIX: Lägg till laddnings-overlay
             if (state.isSaving) {
                 const savingOverlay = document.createElement('div');
-                savingOverlay.className = 'absolute inset-0 bg-white/70 dark:bg-gray-800/70 flex items-center justify-center rounded-xl';
+                savingOverlay.className = 'absolute inset-0 bg-white/70 dark:bg-gray-800/70 flex items-center justify-center rounded-xl z-20';
                 savingOverlay.innerHTML = `<div class="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin-fast"></div>`;
                 modalContent.appendChild(savingOverlay);
                 modalContent.querySelectorAll('input, textarea, button, select').forEach(el => el.disabled = true);
