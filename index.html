@@ -1148,20 +1148,41 @@
             };
 
             const createSection = (title, key, contentGenerator) => {
-                const fieldset = document.createElement('fieldset'); fieldset.className = `border ${classes.border} rounded-lg p-4 mt-6`;
-                const legend = document.createElement('legend'); legend.className = `px-2 font-semibold text-md ${classes.accent} cursor-pointer select-none`;
-                const isOpen = state.openSections[key];
+                const fieldset = document.createElement('fieldset');
+                fieldset.className = `border ${classes.border} rounded-lg p-4 mt-6`;
+                const legend = document.createElement('legend');
+                legend.className = `px-2 font-semibold text-md ${classes.accent} cursor-pointer select-none`;
+                let isOpen = state.openSections[key];
                 legend.innerHTML = `${title} <span class="ml-2 font-mono">${isOpen ? '−' : '+'}</span>`;
                 fieldset.appendChild(legend);
-                const contentDiv = document.createElement('div'); contentDiv.className = `pt-4 transition-all duration-300 ease-in-out ${isOpen ? 'max-h-screen' : 'max-h-0 overflow-hidden pt-0'}`;
-                if(isOpen) contentDiv.appendChild(contentGenerator());
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = `transition-all duration-300 ease-in-out`;
+                
+                if (isOpen) {
+                    contentDiv.classList.add('max-h-screen', 'pt-4');
+                    contentDiv.appendChild(contentGenerator());
+                } else {
+                    contentDiv.classList.add('max-h-0', 'overflow-hidden', 'pt-0');
+                }
+                
                 fieldset.appendChild(contentDiv);
+
                 legend.onclick = () => {
-                    state.openSections[key] = !state.openSections[key];
-                    legend.querySelector('span').textContent = state.openSections[key] ? '−' : '+';
-                    contentDiv.classList.toggle('max-h-0');
-                    contentDiv.classList.toggle('max-h-screen');
-                    contentDiv.classList.toggle('pt-0');
+                    isOpen = !isOpen;
+                    state.openSections[key] = isOpen;
+                    legend.querySelector('span').textContent = isOpen ? '−' : '+';
+
+                    if (isOpen) {
+                        if (contentDiv.children.length === 0) {
+                            contentDiv.appendChild(contentGenerator());
+                        }
+                        contentDiv.classList.remove('max-h-0', 'overflow-hidden', 'pt-0');
+                        contentDiv.classList.add('max-h-screen', 'pt-4');
+                    } else {
+                        contentDiv.classList.remove('max-h-screen', 'pt-4');
+                        contentDiv.classList.add('max-h-0', 'overflow-hidden', 'pt-0');
+                    }
                 };
                 return fieldset;
             };
