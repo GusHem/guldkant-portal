@@ -35,20 +35,19 @@
             0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 175, 0.4); } 
             50% { box-shadow: 0 0 12px 6px rgba(22, 163, 175, 0), 0 0 8px 3px rgba(22, 163, 175, 0.4); } 
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
 
         /* Klasser för att applicera animationer */
         .animate-fade-in-fast { animation: fadeIn 0.3s ease-out forwards; }
         .animate-fade-out-fast { animation: fadeOut 0.3s ease-out forwards; }
         .animate-fade-in-scale { animation: fadeInScale 0.5s ease-out forwards; }
         .animate-pulse-glow { animation: pulseGlow 2.5s infinite; }
-        .animate-spin-fast { animation: spin 0.8s linear infinite; }
         
         /* Stilar för tidväljare */
         .time-picker-column {
             -ms-overflow-style: none;  /* IE and Edge */
             scrollbar-width: none;  /* Firefox */
             scroll-snap-type: y mandatory;
+            scroll-behavior: smooth;
         }
         .time-picker-column::-webkit-scrollbar {
             display: none; /* Chrome, Safari and Opera */
@@ -74,12 +73,13 @@
             language: 'sv',
             isLoggedIn: false,
             isLoading: true,
-            isSaving: false,
             quotes: [],
             selectedQuoteId: null,
             activeView: 'quotes',
             filter: 'prioriterade',
             searchTerm: '',
+            sortBy: 'eventDate', // 'eventDate', 'total', 'customer'
+            sortDirection: 'asc', // 'asc', 'desc'
             toast: null,
             lastDeleted: null,
             confirmationState: { isOpen: false },
@@ -94,6 +94,7 @@
             timePickerTarget: null,
             calendarViewDate: new Date(),
             displayLimit: 12,
+            isSearchFilterModalOpen: false,
         };
 
         function setState(newState, options = { render: 'full' }) {
@@ -103,9 +104,9 @@
             }
         }
 
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- I18N LAYER ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         const texts = {
             sv: {
                 'login.welcome': 'Välkommen till Guldkant Portalen',
@@ -119,11 +120,17 @@
                 'dashboard.title': 'Dashboard',
                 'dashboard.subtitle': 'En proaktiv översikt av din cateringverksamhet.',
                 'controls.search_placeholder': 'Sök på kundnamn, ID...',
+                'controls.search_and_filter': 'Sök & Filtrera',
+                'controls.sort_by': 'Sortera efter',
+                'controls.sort.event_date': 'Eventdatum',
+                'controls.sort.total': 'Totalbelopp',
+                'controls.sort.customer': 'Kundnamn',
                 'controls.card_view': 'Kortvy',
                 'controls.calendar_view': 'Kalendervy',
                 'controls.new_quote': 'Nytt Ärende',
                 'controls.prioritized': 'Prioriterade',
                 'controls.active': 'Aktiva',
+                'controls.upcoming': 'Kommande',
                 'controls.load_more': 'Ladda fler',
                 'status.utkast': 'Utkast',
                 'status.förslag-skickat': 'Förslag Skickat',
@@ -161,9 +168,9 @@
             return text;
         }
 
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- DATA SERVICE ABSTRACTION LAYER ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
         const N8N_BASE_URL = 'https://nordsym.app.n8n.cloud/webhook/';
         const N8N_ENDPOINTS = {
@@ -175,11 +182,7 @@
         class DataService {
             constructor() { this.adapter = new N8nApiAdapter(); }
             async getQuotes() { const response = await this.adapter.get(N8N_ENDPOINTS.GET_QUOTES); return response.quotes.map(transformN8nQuoteToPortalQuote); }
-            async saveQuote(quoteData) { 
-                const n8nPayload = transformPortalQuoteToN8nQuote(quoteData); 
-                console.log('🔬 PRE-FLIGHT PAYLOAD VALIDATION:', n8nPayload);
-                return this.adapter.post(N8N_ENDPOINTS.SAVE_QUOTE, n8nPayload); 
-            }
+            async saveQuote(quoteData) { const n8nPayload = transformPortalQuoteToN8nQuote(quoteData); return this.adapter.post(N8N_ENDPOINTS.SAVE_QUOTE, n8nPayload); }
             async sendQuoteEmail(emailData) { return this.adapter.post(N8N_ENDPOINTS.SEND_EMAIL, emailData); }
         }
 
@@ -190,33 +193,22 @@
                 return response.json();
             }
             async post(endpoint, data) {
+                const response = await fetch(`${N8N_BASE_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    console.error("Error body:", errorBody);
+                    throw new Error(`Network response was not ok: ${response.statusText}`);
+                }
+                const responseText = await response.text();
                 try {
-                    const response = await fetch(`${N8N_BASE_URL}${endpoint}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify(data),
-                    });
-
-                    if (!response.ok) {
-                        const errorBody = await response.text();
-                        console.error("HTTP Error:", response.status, response.statusText, "Body:", errorBody);
-                        throw new Error(`Network response was not ok: ${response.statusText}`);
-                    }
-
-                    const responseText = await response.text();
-                    if (responseText.trim() === '') {
-                        return { status: 'success', message: 'Operation successful with empty response.' };
-                    }
-                    const result = JSON.parse(responseText);
-                    console.log('Success:', result);
-                    return result;
-
+                    return JSON.parse(responseText);
                 } catch (error) {
-                    console.error('Network error:', error);
-                    throw error;
+                    if (responseText.trim() === '') return { status: 'success', message: 'Operation successful with empty response.' };
+                    return { status: 'success', message: 'Operation successful with non-JSON response.', body: responseText };
                 }
             }
         }
@@ -242,78 +234,47 @@
         }
 
         function transformN8nQuoteToPortalQuote(n8nQuote) {
-            // PRODUCTION FIX: recordId är det absolut viktigaste fältet för att kunna uppdatera.
-            // Vi prioriterar det och varnar i konsolen om det saknas för ett existerande ärende.
             const recordId = n8nQuote.recordId || n8nQuote.recordID || null;
-            const offertId = n8nQuote.offertId || n8nQuote.OffertID || null;
-
-            if (!recordId && offertId) {
-                console.warn(`[Data Integrity Warning] Quote ${offertId} loaded from backend without a recordId. Update operations will fail for this item.`);
-            }
-            
-            const standardDiets = {
-                vegetarian: { selected: n8nQuote.hasVegetarian || false, count: n8nQuote.numVegetarian || '' },
-                vegan: { selected: n8nQuote.hasVegan || false, count: n8nQuote.numVegan || '' },
-                glutenFree: { selected: n8nQuote.hasGlutenFree || false, count: n8nQuote.numGlutenFree || '' },
-                lactoseFree: { selected: n8nQuote.hasLactoseFree || false, count: n8nQuote.numLactoseFree || '' },
-                nutAllergy: { selected: n8nQuote.hasNutAllergy || false, count: n8nQuote.numNutAllergy || '' },
-            };
-
             const quoteObject = {
-                // PRODUCTION FIX: Använd alltid backend-ID. Fallback till temporärt ID är inte längre nödvändigt.
-                id: offertId,
+                id: n8nQuote.offertId || n8nQuote.OffertID || n8nQuote.id || `GK-${Date.now()}`,
                 recordId: recordId,
                 status: normalizeStatus(n8nQuote.status),
-                customer: n8nQuote.customerName || n8nQuote['Customer Name'] || n8nQuote.kundNamn || '',
-                customerType: n8nQuote.customerType || 'privat',
-                contactPerson: n8nQuote.contactPerson || '',
-                customerIdNumber: n8nQuote.customerIdNumber || '',
-                contactEmail: n8nQuote.contactEmail || '',
-                contactPhone: n8nQuote.contactPhone || '',
-                address: n8nQuote.address || '',
-                guestCount: Number(n8nQuote.guestCount) || 0,
-                eventDate: n8nQuote.eventDate ? new Date(n8nQuote.eventDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                eventStartTime: n8nQuote.eventStartTime || "17:00",
-                eventEndTime: n8nQuote.eventEndTime || "01:00",
-                eventLocation: n8nQuote.eventLocation || '',
-                eventType: n8nQuote.eventType || '',
-                pricePerGuest: Number(n8nQuote.pricePerGuest) || 0,
-                menuDescription: n8nQuote.menuDescription || '',
-                customerRequests: n8nQuote.customerRequests || '',
-                numChefs: Number(n8nQuote.numChefs) || 0,
-                chefCost: Number(n8nQuote.chefCost) || 0,
-                numServingStaff: Number(n8nQuote.numServingStaff) || 0,
-                servingStaffCost: Number(n8nQuote.servingStaffCost) || 0,
-                discountAmount: Number(n8nQuote.discountAmount) || 0,
-                customCosts: safeJsonParse(n8nQuote.customCosts, []),
-                standardDiets: standardDiets,
-                customDiets: safeJsonParse(n8nQuote.customDiets, []),
-                events: safeJsonParse(n8nQuote.events, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
-                internalComment: n8nQuote.internalComment || '',
-                sentDate: n8nQuote.skickadDatum ? formatDate(n8nQuote.skickadDatum) : null,
-                aiRawLog: n8nQuote.fullConversationLog || '',
-                total: n8nQuote.Totalpris || n8nQuote.total || 0
+                customer: n8nQuote.customerName || n8nQuote.kundNamn || '',
+                customerType: n8nQuote.customerType || n8nQuote.kundtyp || 'privat',
+                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktperson || '',
+                customerIdNumber: n8nQuote.customerIdNumber || n8nQuote.personnummer || '',
+                contactEmail: n8nQuote.contactEmail || n8nQuote.email || '',
+                contactPhone: n8nQuote.contactPhone || n8nQuote.telefon || '',
+                address: n8nQuote.address || n8nQuote.adress || '',
+                guestCount: Number(n8nQuote.guestCount || n8nQuote.antalGaster) || 0,
+                eventDate: (n8nQuote.eventDate || n8nQuote.eventDatum) ? new Date(n8nQuote.eventDate || n8nQuote.eventDatum).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                eventStartTime: n8nQuote.eventStartTime || n8nQuote.starttid || "17:00",
+                eventEndTime: n8nQuote.eventEndTime || n8nQuote.sluttid || "01:00",
+                pricePerGuest: Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) || 0,
+                menuDescription: n8nQuote.menuDescription || n8nQuote.meny || n8nQuote.menuPreference || '',
+                customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || '',
+                numChefs: Number(n8nQuote.numChefs || n8nQuote.antalKockar) || 0,
+                chefCost: Number(n8nQuote.chefCost || n8nQuote.kostnadKockar) || 0,
+                numServingStaff: Number(n8nQuote.numServingStaff || n8nQuote.antalServering) || 0,
+                servingStaffCost: Number(n8nQuote.servingStaffCost || n8nQuote.kostnadServering) || 0,
+                discountAmount: Number(n8nQuote.discountAmount || n8nQuote.rabatt) || 0,
+                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader, []),
+                standardDiets: safeJsonParse(n8nQuote.standardDiets || n8nQuote.standardSpecialkost, {}),
+                customDiets: safeJsonParse(n8nQuote.customDiets || n8nQuote.ovrigSpecialkost, []),
+                events: safeJsonParse(n8nQuote.events || n8nQuote.handelselogg, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
+                internalComment: n8nQuote.internalComment || n8nQuote.internaNoteringar || '',
+                total: Number(n8nQuote.total || n8nQuote.totalt) || 0,
+                sentDate: n8nQuote.sentDate ? formatDate(n8nQuote.sentDate) : null,
+                aiRawLog: n8nQuote.aiRawLog || '',
             };
-            
-            if (!n8nQuote.Totalpris && !n8nQuote.total) {
-                const priceBreakdown = calculateTotal(quoteObject);
-                quoteObject.total = priceBreakdown.finalTotal;
-            }
-
+            quoteObject.total = calculateTotal(quoteObject);
             return quoteObject;
         }
 
         function transformPortalQuoteToN8nQuote(portalQuote) {
-            const priceBreakdown = calculateTotal(portalQuote);
-            
-            // PRODUCTION FIX: Skicka ALDRIG ett frontend-genererat ID till backend.
-            // Om ID:t är temporärt (börjar med 'new-'), skicka null så att backend vet att det ska skapa ett nytt ID.
-            // `recordId` är nu den enda källan till sanning för att identifiera en befintlig post.
-            const isNewQuote = !portalQuote.recordId;
-
             const payload = {
-                recordId: portalQuote.recordId, // Blir `null` för nya ärenden, vilket indikerar CREATE.
-                offertId: isNewQuote ? null : portalQuote.id, // Skicka bara med ID för befintliga ärenden.
+                recordId: portalQuote.recordId,
+                offertId: portalQuote.id,
                 status: portalQuote.status,
                 customerName: portalQuote.customer,
                 customerType: portalQuote.customerType,
@@ -326,8 +287,6 @@
                 eventDate: portalQuote.eventDate,
                 eventStartTime: portalQuote.eventStartTime,
                 eventEndTime: portalQuote.eventEndTime,
-                eventLocation: portalQuote.eventLocation,
-                eventType: portalQuote.eventType,
                 pricePerGuest: Number(portalQuote.pricePerGuest) || 0,
                 menuDescription: portalQuote.menuDescription,
                 customerRequests: portalQuote.customerRequests,
@@ -336,59 +295,37 @@
                 numServingStaff: Number(portalQuote.numServingStaff) || 0,
                 servingStaffCost: Number(portalQuote.servingStaffCost) || 0,
                 discountAmount: Number(portalQuote.discountAmount) || 0,
-                total: priceBreakdown.finalTotal,
+                total: Number(portalQuote.total) || 0,
                 internalComment: portalQuote.internalComment,
-                customCosts: JSON.stringify(portalQuote.customCosts || []),
-                customDiets: JSON.stringify(portalQuote.customDiets || []),
-                events: JSON.stringify(portalQuote.events || []),
-                hasVegetarian: portalQuote.standardDiets?.vegetarian?.selected || false,
-                numVegetarian: Number(portalQuote.standardDiets?.vegetarian?.count) || 0,
-                hasVegan: portalQuote.standardDiets?.vegan?.selected || false,
-                numVegan: Number(portalQuote.standardDiets?.vegan?.count) || 0,
-                hasGlutenFree: portalQuote.standardDiets?.glutenFree?.selected || false,
-                numGlutenFree: Number(portalQuote.standardDiets?.glutenFree?.count) || 0,
-                hasLactoseFree: portalQuote.standardDiets?.lactoseFree?.selected || false,
-                numLactoseFree: Number(portalQuote.standardDiets?.lactoseFree?.count) || 0,
-                hasNutAllergy: portalQuote.standardDiets?.nutAllergy?.selected || false,
-                numNutAllergy: Number(portalQuote.standardDiets?.nutAllergy?.count) || 0,
+                customCosts: portalQuote.customCosts || [],
+                standardDiets: portalQuote.standardDiets || {},
+                customDiets: portalQuote.customDiets || [],
+                events: portalQuote.events || [],
             };
             return payload;
         }
 
         const dataService = new DataService();
         
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- TEMA & HJÄLPFUNKTIONER ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         const themes = {
             dark: { htmlClass: 'dark', bg: 'bg-gray-900', cardBg: 'bg-gray-800', text: 'text-gray-200', textSecondary: 'text-gray-400', accent: 'text-cyan-400', border: 'border-gray-700', inputBg: 'bg-gray-700', buttonPrimaryBg: 'bg-cyan-500', buttonPrimaryText: 'text-gray-900', buttonPrimaryHover: 'hover:bg-cyan-400', buttonSecondaryBg: 'bg-gray-700', buttonSecondaryText: 'text-gray-200', buttonSecondaryHover: 'hover:bg-gray-600', modalOverlay: 'bg-black/80 backdrop-blur-md', navActive: 'bg-cyan-500/10 text-cyan-400 border-cyan-500', navInactive: 'text-gray-400 border-transparent hover:bg-gray-700/50', filterActive: 'bg-cyan-500 text-gray-900', filterInactive: 'bg-gray-700 hover:bg-gray-600', ringOffset: 'ring-offset-gray-900', focus: 'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 ring-offset-gray-900' },
             light: { htmlClass: 'light', bg: 'bg-slate-50', cardBg: 'bg-white', text: 'text-slate-800', textSecondary: 'text-slate-500', accent: 'text-cyan-600', border: 'border-slate-200', inputBg: 'bg-slate-100', buttonPrimaryBg: 'bg-cyan-500', buttonPrimaryText: 'text-white', buttonPrimaryHover: 'hover:bg-cyan-600', buttonSecondaryBg: 'bg-slate-200', buttonSecondaryText: 'text-slate-800', buttonSecondaryHover: 'hover:bg-slate-300', modalOverlay: 'bg-slate-900/80 backdrop-blur-md', navActive: 'bg-cyan-500/10 text-cyan-600 border-cyan-500', navInactive: 'text-slate-600 border-transparent hover:bg-slate-200', filterActive: 'bg-cyan-500 text-white', filterInactive: 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-200', ringOffset: 'ring-offset-slate-50', focus: 'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 ring-offset-slate-50' }
         };
         const formatDate = (dateString, options = { year: 'numeric', month: '2-digit', day: '2-digit' }) => { if (!dateString) return ''; const date = new Date(dateString); return isNaN(date) ? '' : date.toLocaleDateString('sv-SE', options); };
         const formatTimestamp = (timestamp) => new Date(timestamp).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
-        
-        const calculateTotal = (quote) => {
-            if (!quote) return { subTotal: 0, vat: 0, finalTotal: 0 };
-            const pricePerGuest = Number(quote.pricePerGuest) || 0;
-            const guestCount = Number(quote.guestCount) || 0;
-            const basePrice = pricePerGuest * guestCount;
-            const chefCost = Number(quote.chefCost) || 0;
-            const servingStaffCost = Number(quote.servingStaffCost) || 0;
-            const staffPrice = chefCost + servingStaffCost;
-            const customPrice = (quote.customCosts || []).reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
-            const discount = Number(quote.discountAmount) || 0;
-            const subTotal = basePrice + staffPrice + customPrice - discount;
-            const vat = subTotal * 0.12;
-            const finalTotal = subTotal + vat;
-            return { subTotal, vat, finalTotal };
-        };
-
+        const calculateTotal = (quote) => { if (!quote) return 0; const base = (Number(quote.guestCount) || 0) * (Number(quote.pricePerGuest) || 0); const staff = (Number(quote.chefCost) || 0) + (Number(quote.servingStaffCost) || 0); const custom = (quote.customCosts || []).reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0); const subTotal = base + staff + custom; const discountedSubTotal = subTotal - (Number(quote.discountAmount) || 0); const vat = discountedSubTotal * 0.12; return discountedSubTotal + vat; };
         function createElement(tag, classList = [], children = []) { const el = document.createElement(tag); if (classList.length) el.className = classList.join(' '); children.forEach(child => { if (typeof child === 'string') { el.appendChild(document.createTextNode(child)); } else if (child instanceof Node) { el.appendChild(child); } }); return el; }
 
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- IKON-BIBLIOTEK ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         const icons = {
+            arrowUp: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M213.66,122.34l-80-80a8,8,0,0,0-11.32,0l-80,80a8,8,0,0,0,11.32,11.32L120,65.31V216a8,8,0,0,0,16,0V65.31l66.34,68.35a8,8,0,0,0,11.32-11.32Z"></path></svg>`,
+            arrowDown: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M213.66,133.66l-80,80a8,8,0,0,1-11.32,0l-80-80a8,8,0,0,1,11.32-11.32L120,190.69V40a8,8,0,0,1,16,0V190.69l66.34-68.35a8,8,0,0,1,11.32,11.32Z"></path></svg>`,
+            slidersHorizontal: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M128,104a24,24,0,1,0-24-24A24,24,0,0,0,128,104Zm0,48a24,24,0,1,0,24,24A24,24,0,0,0,128,152ZM48,80a24,24,0,1,0,24,24A24,24,0,0,0,48,80Zm160,72a24,24,0,1,0,24,24A24,24,0,0,0,208,152ZM48,152a24,24,0,1,0,24,24A24,24,0,0,0,48,152Zm160-72a24,24,0,1,0,24,24A24,24,0,0,0,208,80Z"></path></svg>`,
             copy: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"></path></svg>`,
             chevronLeft: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M165.66,202.34a8,8,0,0,1-11.32,0L80,128,154.34,53.66a8,8,0,0,1,11.32,11.32L97,128l68.66,63.02A8,8,0,0,1,165.66,202.34Z"></path></svg>`,
             chevronRight: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1.5em" height="1.5em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M181.66,133.66,107.32,208a8,8,0,0,1-11.32-11.32L164.69,128,96,59.31A8,8,0,0,1,107.32,48l74.34,74.34A8,8,0,0,1,181.66,133.66Z"></path></svg>`,
@@ -408,7 +345,7 @@
             x: (classes) => `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" viewBox="0 0 256 256" class="${classes}"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path></svg>`,
         };
         
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- LOGIK-HANTERARE & PDF-GENERATOR ---
         // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         const statusTextMap = { 'utkast': t('status.utkast'), 'förslag-skickat': t('status.förslag-skickat'), 'godkänd': t('status.godkänd'), 'genomförd': t('status.genomförd'), 'betald': t('status.betald'), 'förlorad': t('status.förlorad'), 'arkiverad': t('status.arkiverad') };
@@ -428,8 +365,7 @@
         function handleLogin() { setState({ isLoggedIn: true }); loadInitialData(); }
         
         async function handleSaveQuote(updatedQuote) {
-            const priceBreakdown = calculateTotal(updatedQuote);
-            const withTotal = {...updatedQuote, total: priceBreakdown.finalTotal};
+            const withTotal = {...updatedQuote, total: calculateTotal(updatedQuote)};
             
             if (!withTotal.customer?.trim()) {
                 showToast('Kundnamn är obligatoriskt.', 'error');
@@ -440,80 +376,62 @@
                 return;
             }
 
-            setState({ isSaving: true });
+            const originalId = withTotal.id;
+            const originalQuotes = [...state.quotes];
+            
+            const existingQuoteIndex = state.quotes.findIndex(q => q.id === originalId);
+            let newQuotes;
+            if (existingQuoteIndex > -1) {
+                newQuotes = state.quotes.map(q => q.id === originalId ? withTotal : q);
+            } else {
+                newQuotes = [withTotal, ...state.quotes];
+            }
+            setState({ quotes: newQuotes, formData: null, selectedQuoteId: null });
 
             try {
                 await dataService.saveQuote(withTotal);
-                showToast(`Ärende ${withTotal.id || 'Nytt ärende'} har sparats.`, 'success');
-                await loadInitialData(); // Hämta ny data för att få korrekta ID:n från servern
-                setState({ isSaving: false, selectedQuoteId: null, formData: null });
+                showToast(`Ärende ${originalId} har sparats.`, 'success');
+                await loadInitialData();
             } catch (error) {
                 console.error("Save Error:", error);
-                setState({ isSaving: false }); 
-                showToast(`Sparning av ärende ${withTotal.id || ''} misslyckades.`, 'error', {
+                setState({ quotes: originalQuotes, formData: updatedQuote, selectedQuoteId: originalId });
+                showToast(`Sparning av ärende ${originalId} misslyckades.`, 'error', {
                     onRetry: () => handleSaveQuote(updatedQuote)
                 });
             }
         }
 
         function handleStatusChange(quoteToUpdate, newStatus, eventMessage) {
-            // PRODUCTION FIX: Om recordId saknas kan vi inte spara. Avbryt och varna.
-            if (!quoteToUpdate.recordId) {
-                console.error("CRITICAL: Attempted to change status on a quote with no recordId.", quoteToUpdate);
-                showToast(`Kan inte ändra status. Ärendet saknar server-ID.`, 'error');
-                return;
-            }
-
             const defaultEventMessage = `Status manuellt ändrad till "${statusTextMap[newStatus]}".`;
             const newEvent = { timestamp: new Date().toISOString(), event: eventMessage || defaultEventMessage };
             const updatedQuote = { ...quoteToUpdate, status: newStatus, events: [...(quoteToUpdate.events || []), newEvent] };
             
-            // PRODUCTION FIX: Spara original-state för rollback vid fel.
-            const originalQuotes = JSON.parse(JSON.stringify(state.quotes));
-            
-            // Optimistisk UI-uppdatering
             const optimisticQuotes = state.quotes.map(q => q.id === updatedQuote.id ? updatedQuote : q);
-            setState({ quotes: optimisticQuotes }, { render: 'full' });
             
-            showToast(t('toast.status_changed', { status: statusTextMap[newStatus] }), 'info');
+            const newState = { quotes: optimisticQuotes };
+            if (state.selectedQuoteId === updatedQuote.id) {
+                newState.formData = updatedQuote;
+            }
+            setState(newState, { render: 'full' });
+            
+            showToast(t('toast.status_changed', { status: statusTextMap[newStatus] }), 'success');
             
             dataService.saveQuote(updatedQuote)
-                .then(() => {
-                    console.log(`Status change for ${updatedQuote.id} (${updatedQuote.recordId}) saved successfully.`);
-                    // Vi behöver inte göra något här, eftersom vi laddar om all data efter varje lyckad save.
-                    // För en ännu snabbare känsla kan man lita på den optimistiska uppdateringen, men full reload är säkrare.
-                    loadInitialData();
-                })
+                .then(() => console.log(`Status change for ${updatedQuote.id} saved successfully.`))
                 .catch(error => {
                     console.error("Save Error on status change:", error);
-                    // PRODUCTION FIX: Implementera rollback
-                    showToast(`Kunde inte spara statusändring för ${updatedQuote.id}. Återställer.`, 'error');
-                    setState({ quotes: originalQuotes }); // Återställ till state innan ändringen
+                    const revertedQuotes = state.quotes.map(q => q.id === updatedQuote.id ? quoteToUpdate : q);
+                    const revertedState = { quotes: revertedQuotes };
+                    if (state.selectedQuoteId === updatedQuote.id) {
+                        revertedState.formData = quoteToUpdate;
+                    }
+                    setState(revertedState);
+                    showToast(`Kunde inte spara statusändring för ${updatedQuote.id}.`, 'error');
                 });
         }
 
-        function handleNewQuote() { 
-            // PRODUCTION FIX: Generera ALDRIG ett permanent ID på klienten.
-            // Använd ett temporärt ID för state-hantering och sätt recordId till null
-            // för att signalera att detta är ett nytt ärende.
-            const tempId = `new-quote-${Date.now()}`;
-            const newQuoteData = { 
-                id: tempId, // Temporärt ID, används bara i UI
-                recordId: null, // Detta är nyckeln! Null betyder "skapa ny".
-                status: 'utkast', 
-                customer: '', 
-                customerType: 'privat', 
-                eventDate: new Date().toISOString().split('T')[0], 
-                events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat i portalen' }], 
-                customCosts: [], 
-                customDiets: [], 
-                standardDiets: {}, 
-                total: 0 
-            }; 
-            setState({ selectedQuoteId: newQuoteData.id, formData: newQuoteData }); 
-        }
-
-        function handleCopyQuote(quoteToCopy) { const newQuoteData = { ...JSON.parse(JSON.stringify(quoteToCopy)), id: `new-quote-${Date.now()}`, recordId: null, status: 'utkast', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: `Kopia från ${quoteToCopy.id}.` }] }; delete newQuoteData.total; handleSaveQuote(newQuoteData); showToast(t('toast.copied'), 'success'); }
+        function handleNewQuote() { const newQuoteData = { id: `GK-${Date.now()}`, recordId: null, status: 'utkast', customer: '', customerType: 'privat', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat' }], customCosts: [], customDiets: [], standardDiets: {}, total: 0 }; setState({ selectedQuoteId: newQuoteData.id, formData: newQuoteData }); }
+        function handleCopyQuote(quoteToCopy) { const newQuoteData = { ...JSON.parse(JSON.stringify(quoteToCopy)), id: `GK-${Date.now()}`, recordId: null, status: 'utkast', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: `Kopia från ${quoteToCopy.id}.` }] }; delete newQuoteData.total; handleSaveQuote(newQuoteData); showToast(t('toast.copied'), 'success'); }
         function handleDeleteQuote(quoteToDelete) { setState({ lastDeleted: quoteToDelete, quotes: state.quotes.filter(q => q.id !== quoteToDelete.id), selectedQuoteId: null, formData: null, }); showToast(t('toast.deleted', {id: quoteToDelete.id}), 'success', { undoable: true }); }
         function handleUndoDelete() { if (state.lastDeleted) { const newQuotes = [...state.quotes, state.lastDeleted].sort((a,b) => new Date(b.events[0]?.timestamp) - new Date(a.events[0]?.timestamp)); setState({ quotes: newQuotes, lastDeleted: null, toast: null }); clearTimeout(toastTimer); } }
         
@@ -583,14 +501,15 @@
                 if (quote.chefCost > 0) body.push(['Personal: Kockar', '', `${Number(quote.chefCost).toLocaleString('sv-SE')} kr`]);
                 if (quote.servingStaffCost > 0) body.push(['Personal: Servering', '', `${Number(quote.servingStaffCost).toLocaleString('sv-SE')} kr`]);
                 (quote.customCosts || []).forEach(cost => { if(cost.description && cost.amount) body.push([cost.description, '', `${Number(cost.amount).toLocaleString('sv-SE')} kr`]); });
-                
-                const priceBreakdown = calculateTotal(quote);
-                
+                const subTotalBeforeDiscount = basePrice + (Number(quote.chefCost) || 0) + (Number(quote.servingStaffCost) || 0) + (quote.customCosts || []).reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
+                const subTotal = subTotalBeforeDiscount - (Number(quote.discountAmount) || 0);
+                const vat = subTotal * 0.12;
+                const total = subTotal + vat;
                 body.push([' ', ' ', ' ']);
                 if (quote.discountAmount > 0) body.push([{ content: 'Rabatt', styles: { fontStyle: 'bold' } }, '', `-${Number(quote.discountAmount).toLocaleString('sv-SE')} kr`]);
-                body.push([{ content: 'Delsumma:', styles: { fontStyle: 'bold' } }, '', `${priceBreakdown.subTotal.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
-                body.push([{ content: 'Moms (12%):', styles: { fontStyle: 'bold' } }, '', `${priceBreakdown.vat.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
-                body.push([{ content: 'Totalt att betala:', styles: { fontStyle: 'bold', fontSize: 12 } }, '', `${priceBreakdown.finalTotal.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
+                body.push([{ content: 'Delsumma:', styles: { fontStyle: 'bold' } }, '', `${subTotal.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
+                body.push([{ content: 'Moms (12%):', styles: { fontStyle: 'bold' } }, '', `${vat.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
+                body.push([{ content: 'Totalt att betala:', styles: { fontStyle: 'bold', fontSize: 12 } }, '', `${total.toLocaleString('sv-SE', { minimumFractionDigits: 2 })} kr`]);
                 doc.autoTable({ head, body, startY: lastY + 30, theme: 'grid', headStyles: { fillColor: [241, 245, 249], textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 80 }, 1: { cellWidth: 60 }, 2: { cellWidth: 'auto', halign: 'right' } } });
                 doc.setFontSize(8); doc.setFont('helvetica', 'normal');
                 const footerText = "Offerten är giltig i 30 dagar. När vi är överens om innehåll skickar Guldkant en beställningsbekräftelse via mail som behöver ett godkännande från er sida.\n\nMenyförslag av. Guldkant, camilla@restaurangguldkant.se/0739-411422\nRestaurang Guldkant | org nr 556719-3635 | Grönsakstorget 6, 593 33 Västervik";
@@ -604,9 +523,9 @@
             }
         }
 
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- UI-KOMPONENTER ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         
         function SimpleLoginScreen() {
             const classes = themes[state.theme];
@@ -691,7 +610,7 @@
             button.className = `relative w-full cursor-pointer rounded-md border ${classes.border} ${classes.inputBg} py-2 pl-3 pr-10 text-left text-sm shadow-sm ${classes.focus}`;
             button.innerHTML = `<span class="flex items-center"><span class="h-2.5 w-2.5 flex-shrink-0 rounded-full ${statusColors[quote.status]}"></span><span class="ml-3 block truncate">${statusTextMap[quote.status]}</span></span><span class="pointer-events-none absolute inset-y-0 right-0 ml-3 flex items-center pr-2">${icons.caretUpDown(`h-5 w-5 ${classes.textSecondary}`)}</span>`;
             const optionsContainer = document.createElement('div');
-            optionsContainer.className = `absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md ${classes.cardBg} py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm hidden`;
+            optionsContainer.className = `absolute z-40 mt-1 max-h-56 w-full overflow-auto rounded-md ${classes.cardBg} py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm hidden`;
             Object.keys(statusTextMap).forEach(statusId => {
                 const option = document.createElement('div');
                 option.className = `flex cursor-pointer select-none items-center p-2 transition-colors hover:${classes.inputBg}`;
@@ -710,7 +629,7 @@
             const statusBorderColor = { utkast: 'border-l-yellow-500', 'förslag-skickat': 'border-l-blue-500', 'godkänd': 'border-l-green-500', 'genomförd': 'border-l-blue-700', 'betald': 'border-l-purple-500', 'förlorad': 'border-l-red-500', 'arkiverad': 'border-l-gray-500' };
             const card = document.createElement('div');
             card.tabIndex = 0;
-            card.className = `${classes.cardBg} rounded-lg shadow-lg p-4 md:p-5 border ${classes.border} ${statusBorderColor[quote.status] || 'border-l-gray-700'} border-l-4 transition-all duration-300 flex flex-col justify-between hover:ring-2 hover:scale-[1.02] focus-within:ring-2 focus-within:ring-cyan-500/50 ${classes.focus}`;
+            card.className = `relative ${classes.cardBg} rounded-lg shadow-lg p-4 md:p-5 border ${classes.border} ${statusBorderColor[quote.status] || 'border-l-gray-700'} border-l-4 transition-all duration-300 flex flex-col justify-between hover:ring-2 hover:scale-[1.02] focus-within:ring-2 focus-within:ring-cyan-500/50 focus-within:z-10 ${classes.focus}`;
             card.onclick = () => setState({ selectedQuoteId: quote.id, formData: JSON.parse(JSON.stringify(quote)) });
             const topSection = document.createElement('div');
             topSection.innerHTML = `<div class="flex justify-between items-start mb-2"><h3 class="font-bold text-lg pr-2 flex-grow">${quote.customer || t('quote.nameless')}</h3></div>`;
@@ -725,45 +644,38 @@
         function QuotesControls() {
             const classes = themes[state.theme];
             const container = document.createElement('div');
-            container.className = 'mb-4';
+            container.className = 'mb-6';
             const topRow = document.createElement('div');
-            topRow.className = 'flex flex-col md:flex-row gap-4 justify-between items-center mb-4';
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.placeholder = t('controls.search_placeholder');
-            searchInput.className = `w-full md:w-2/5 p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`;
-            searchInput.oninput = (e) => setState({ searchTerm: e.target.value });
-            searchInput.value = state.searchTerm;
+            topRow.className = 'flex flex-wrap gap-2 justify-between items-center';
+
+            const searchFilterButton = document.createElement('button');
+            searchFilterButton.className = `${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${classes.focus}`;
+            searchFilterButton.innerHTML = `${icons.slidersHorizontal('w-4 h-4')} ${t('controls.search_and_filter')}`;
+            searchFilterButton.onclick = () => setState({ isSearchFilterModalOpen: true });
+
+            const rightSideContainer = document.createElement('div');
+            rightSideContainer.className = 'flex items-center gap-2';
+
+            const viewModeGroup = document.createElement('div');
+            viewModeGroup.className = 'flex items-center';
             const cardViewButton = document.createElement('button');
             cardViewButton.textContent = t('controls.card_view');
-            cardViewButton.className = `w-1/2 md:w-auto px-3 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.viewMode === 'cards' ? classes.filterActive : classes.filterInactive}`;
+            cardViewButton.className = `px-3 py-2 text-sm font-medium rounded-l-md transition-colors ${classes.focus} ${state.viewMode === 'cards' ? classes.filterActive : classes.filterInactive}`;
             cardViewButton.onclick = () => setState({ viewMode: 'cards' });
             const calendarViewButton = document.createElement('button');
             calendarViewButton.textContent = t('controls.calendar_view');
-            calendarViewButton.className = `w-1/2 md:w-auto px-3 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.viewMode === 'calendar' ? classes.filterActive : classes.filterInactive}`;
+            calendarViewButton.className = `px-3 py-2 text-sm font-medium rounded-r-md transition-colors border-l ${classes.border} ${classes.focus} ${state.viewMode === 'calendar' ? classes.filterActive : classes.filterInactive}`;
             calendarViewButton.onclick = () => setState({ viewMode: 'calendar' });
+            viewModeGroup.append(cardViewButton, calendarViewButton);
+
             const newQuoteButton = document.createElement('button');
             newQuoteButton.innerHTML = `${icons.plus('inline-block -mt-1 mr-1')} ${t('controls.new_quote')}`;
-            newQuoteButton.className = `w-full mt-2 md:mt-0 md:w-auto ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow-sm ${classes.focus}`;
+            newQuoteButton.className = `w-full sm:w-auto ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow-sm ${classes.focus}`;
             newQuoteButton.onclick = handleNewQuote;
-            const buttonGroup = document.createElement('div');
-            buttonGroup.className = 'flex gap-2 w-full md:w-auto';
-            buttonGroup.append(cardViewButton, calendarViewButton);
-            const rightSideContainer = document.createElement('div');
-            rightSideContainer.className = 'flex flex-col md:flex-row gap-2 w-full md:w-auto';
-            rightSideContainer.append(buttonGroup, newQuoteButton);
-            topRow.append(searchInput, rightSideContainer);
-            const filterRow = document.createElement('div');
-            filterRow.className = 'flex flex-wrap gap-2';
-            const filters = [ { id: 'prioriterade', label: t('controls.prioritized') }, { id: 'aktiva', label: t('controls.active') }, { id: 'utkast', label: t('status.utkast') }, { id: 'förslag-skickat', label: t('status.förslag-skickat') }, { id: 'godkänd', label: t('status.godkänd') }, { id: 'genomförd', label: t('status.genomförd') }, { id: 'förlorad', label: t('status.förlorad') }, { id: 'arkiverad', label: t('status.arkiverad') } ];
-            filters.forEach(f => {
-                const button = document.createElement('button');
-                button.textContent = f.label;
-                button.className = `px-4 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.filter === f.id ? classes.filterActive : classes.filterInactive}`;
-                button.onclick = () => setState({ filter: f.id, displayLimit: 12 });
-                filterRow.appendChild(button);
-            });
-            container.append(topRow, filterRow);
+
+            rightSideContainer.append(viewModeGroup, newQuoteButton);
+            topRow.append(searchFilterButton, rightSideContainer);
+            container.appendChild(topRow);
             return container;
         }
 
@@ -789,10 +701,24 @@
                     const itemEl = document.createElement('div');
                     itemEl.className = `p-2 rounded-md ${classes.inputBg} hover:bg-cyan-500/10 cursor-pointer transition-colors ${classes.focus}`;
                     itemEl.onclick = () => setState({ selectedQuoteId: q.id, formData: JSON.parse(JSON.stringify(q)) });
-                    let itemContent = `<p class="font-semibold text-sm">${q.customer}</p>`;
-                    if (title === "Ärenden som kräver åtgärd") itemContent += `<p class="text-xs ${classes.textSecondary}">Status: ${statusTextMap[q.status]}</p>`;
-                    else if (title === "Uppföljning & Fakturering") itemContent += `<p class="text-xs ${classes.textSecondary}">Genomförd: ${formatDate(q.eventDate)}</p>`;
-                    else if (title === "Kommande Event") itemContent = `<div class="flex justify-between items-center"><p class="font-semibold text-sm">${q.customer}</p>${q.status === 'betald' ? '<span class="text-xs font-bold text-purple-400">BETALD</span>' : ''}</div><p class="text-xs ${classes.textSecondary}">Eventdatum: ${formatDate(q.eventDate)}</p>`;
+                    
+                    let itemContent = '';
+                    if (title === "Kommande Event") {
+                        let badgeHTML = '';
+                        if (q.status === 'betald') {
+                            badgeHTML = `<span class="text-xs font-bold text-purple-500">BETALD</span>`;
+                        } else if (q.status === 'godkänd') {
+                            badgeHTML = `<span class="text-xs font-bold text-green-500">GODKÄND</span>`;
+                        }
+                        itemContent = `<div class="flex justify-between items-center"><p class="font-semibold text-sm">${q.customer}</p>${badgeHTML}</div><p class="text-xs ${classes.textSecondary}">Eventdatum: ${formatDate(q.eventDate)}</p>`;
+                    } else {
+                        itemContent = `<p class="font-semibold text-sm">${q.customer}</p>`;
+                        if (title === "Ärenden som kräver åtgärd") {
+                            itemContent += `<p class="text-xs ${classes.textSecondary}">Status: ${statusTextMap[q.status]}</p>`;
+                        } else if (title === "Uppföljning & Fakturering") {
+                            itemContent += `<p class="text-xs ${classes.textSecondary}">Genomförd: ${formatDate(q.eventDate)}</p>`;
+                        }
+                    }
                     itemEl.innerHTML = itemContent;
                     content.appendChild(itemEl);
                 });
@@ -813,17 +739,49 @@
             const followUpItems = allQuotes.filter(q => q.status === 'genomförd').slice(0, 5);
             const now = new Date(); now.setHours(0,0,0,0);
             const upcomingEvents = allQuotes.filter(q => ['godkänd', 'betald'].includes(q.status) && new Date(q.eventDate) >= now).sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate)).slice(0, 5);
-            const filteredQuotes = allQuotes.filter(q => {
+            
+            let filteredQuotes = allQuotes.filter(q => {
                 const term = state.searchTerm.toLowerCase();
                 const searchMatch = term === '' || q.customer?.toLowerCase().includes(term) || q.id?.toLowerCase().includes(term);
                 let statusMatch = false;
                 switch (state.filter) {
                     case 'prioriterade': statusMatch = ['utkast', 'förslag-skickat'].includes(q.status); break;
                     case 'aktiva': statusMatch = !['betald', 'förlorad', 'arkiverad'].includes(q.status); break;
+                    case 'kommande': 
+                        const eventDate = new Date(q.eventDate);
+                        eventDate.setHours(0,0,0,0);
+                        statusMatch = ['godkänd', 'betald'].includes(q.status) && eventDate >= now;
+                        break;
                     default: statusMatch = q.status === state.filter; break;
                 }
                 return statusMatch && searchMatch;
             });
+            
+            const { sortBy, sortDirection } = state;
+            filteredQuotes.sort((a, b) => {
+                let valA, valB;
+                switch (sortBy) {
+                    case 'eventDate':
+                        valA = new Date(a.eventDate);
+                        valB = new Date(b.eventDate);
+                        break;
+                    case 'total':
+                        valA = a.total || 0;
+                        valB = b.total || 0;
+                        break;
+                    case 'customer':
+                        valA = a.customer?.toLowerCase() || '';
+                        valB = b.customer?.toLowerCase() || '';
+                        break;
+                    default:
+                        return 0;
+                }
+
+                if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+
             const paginatedQuotes = filteredQuotes.slice(0, state.displayLimit);
             container.innerHTML = `<div class="flex justify-between items-center mb-2"><h1 class="text-2xl md:text-3xl font-bold">${t('dashboard.title')}</h1><button id="focus-mode-btn" class="${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} p-2 rounded-full transition-all duration-300 flex items-center justify-center w-10 h-10 ${state.isFocusMode ? 'ring-2 ring-cyan-500' : ''} ${classes.focus}" title="${state.isFocusMode ? "Avsluta fokusläge" : "Fokusläge"}">${state.isFocusMode ? icons.x(`${classes.accent} w-1.2 h-1.2`) : icons.square(classes.accent)}</button></div><p class="${classes.textSecondary} mb-8">${t('dashboard.subtitle')}</p>`;
             container.querySelector('#focus-mode-btn').onclick = () => setState({ isFocusMode: !state.isFocusMode });
@@ -934,7 +892,7 @@
 
         function Toast(toast) {
             const classes = themes[state.theme];
-            const toastColors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
+            const toastColors = { success: 'bg-green-500', error: 'bg-red-500' };
             const container = document.createElement('div');
             container.className = `fixed bottom-5 right-5 z-50 ${toastColors[toast.type]} text-white p-4 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-scale`;
             container.appendChild(createElement('p', [], [toast.message]));
@@ -1058,26 +1016,47 @@
             overlay.className = `fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in-fast ${classes.modalOverlay}`;
             overlay.onclick = () => setState({ isTimePickerOpen: false });
             const container = document.createElement('div');
-            container.className = `relative ${classes.cardBg} p-4 rounded-lg shadow-xl border ${classes.border} w-48 animate-fade-in-scale`;
+            container.className = `relative ${classes.cardBg} p-4 rounded-lg shadow-xl border ${classes.border} w-56 animate-fade-in-scale`;
             container.onclick = e => e.stopPropagation();
             const [initialHour, initialMinute] = (initialTime || "12:00").split(':').map(Number);
+            
             const timeScroller = document.createElement('div');
-            timeScroller.className = 'flex justify-center items-center h-48 gap-2';
+            timeScroller.className = 'relative flex justify-center items-center h-60 gap-2'; // h-60 = 15rem, 5 items synliga
+
+            const indicator = document.createElement('div');
+            indicator.className = `absolute inset-x-0 top-1/2 -translate-y-1/2 h-12 rounded-lg ${classes.inputBg} border-y-2 ${classes.border}`;
+            timeScroller.appendChild(indicator);
+
+            const columnsContainer = document.createElement('div');
+            columnsContainer.className = 'flex justify-center items-center gap-2 z-10';
+
             const createColumn = (max, initialValue) => {
                 const column = document.createElement('div');
                 column.className = 'w-16 h-full overflow-y-scroll hide-scrollbar text-center text-2xl time-picker-column';
+                
+                const paddingTop = document.createElement('div');
+                paddingTop.style.height = '96px'; // 2 * 48px item height
+                column.appendChild(paddingTop);
+
                 for (let i = 0; i < max; i++) {
                     const el = document.createElement('div');
-                    el.className = 'h-12 flex items-center justify-center';
+                    el.className = 'h-12 flex items-center justify-center flex-shrink-0'; // h-12 = 3rem = 48px
                     el.textContent = i.toString().padStart(2, '0');
                     column.appendChild(el);
                 }
+
+                const paddingBottom = document.createElement('div');
+                paddingBottom.style.height = '96px'; // 2 * 48px item height
+                column.appendChild(paddingBottom);
+
                 setTimeout(() => { column.scrollTop = initialValue * 48; }, 0);
                 return column;
             };
             const hourCol = createColumn(24, initialHour);
             const minuteCol = createColumn(60, initialMinute);
-            timeScroller.append(hourCol, createElement('span', ['text-2xl'], [':']), minuteCol);
+            columnsContainer.append(hourCol, createElement('span', ['text-2xl', 'font-semibold'], [':']), minuteCol);
+            timeScroller.appendChild(columnsContainer);
+
             const setBtn = document.createElement('button');
             setBtn.className = `mt-4 w-full ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} py-2 rounded-lg font-semibold`;
             setBtn.textContent = 'Sätt tid';
@@ -1091,9 +1070,9 @@
             return overlay;
         }
 
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- EDIT MODAL KOMPONENT ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         
         const STANDARD_DIETS = [ { key: 'vegetarian', label: 'Vegetariskt' }, { key: 'vegan', label: 'Veganskt' }, { key: 'glutenFree', label: 'Glutenfritt' }, { key: 'lactoseFree', label: 'Laktosfritt' }, { key: 'nutAllergy', label: 'Nötallergi' } ];
 
@@ -1113,30 +1092,41 @@
             modalContent.onclick = (e) => e.stopPropagation();
 
             const header = document.createElement('header');
-            header.className = `p-4 border-b ${classes.border} flex justify-between items-center flex-shrink-0`;
-            header.innerHTML = `<h2 class="text-xl md:text-2xl font-bold">${formData.recordId ? t('modal.edit_title') : 'Skapa Nytt Ärende'}: <span class="${classes.accent}">${formData.recordId ? formData.id : 'Nytt'}</span></h2>`;
+            header.className = `p-4 border-b ${classes.border} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`;
+
+            const titleContainer = document.createElement('div');
+            titleContainer.className = 'flex items-center gap-3 flex-wrap';
+            const title = document.createElement('h2');
+            title.className = 'text-xl md:text-2xl font-bold';
+            title.innerHTML = `${t('modal.edit_title')}: <span class="${classes.accent}">${formData.id}</span>`;
+            titleContainer.appendChild(title);
+
+            if (formData.status === 'godkänd' || formData.status === 'betald') {
+                const badge = document.createElement('span');
+                badge.textContent = formData.status === 'godkänd' ? 'GODKÄND' : 'BETALD';
+                badge.className = `px-2.5 py-1 text-xs font-bold rounded-full ${formData.status === 'godkänd' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300'}`;
+                titleContainer.appendChild(badge);
+            }
+
+            const controlsContainer = document.createElement('div');
+            controlsContainer.className = 'flex items-center gap-4 w-full sm:w-auto';
+            const statusSelectorContainer = document.createElement('div');
+            statusSelectorContainer.className = 'w-full sm:w-48';
+            statusSelectorContainer.appendChild(StatusSelector(formData));
+            controlsContainer.appendChild(statusSelectorContainer);
+
             const closeButton = document.createElement('button');
             closeButton.className = `p-2 rounded-full hover:bg-red-500/10 ${classes.focus}`;
             closeButton.innerHTML = icons.x("w-6 h-6 hover:text-red-500");
             closeButton.onclick = () => setState({ selectedQuoteId: null, formData: null, isMicroCalendarOpen: false, isTimePickerOpen: false });
-            header.appendChild(closeButton);
+            controlsContainer.appendChild(closeButton);
+            
+            header.append(titleContainer, controlsContainer);
 
             const main = document.createElement('main');
             main.className = 'p-4 md:p-6 overflow-y-auto flex-grow hide-scrollbar';
 
-            const updatePriceDisplay = () => {
-                const priceBreakdown = calculateTotal(state.formData);
-                const totalDisplay = document.getElementById('modal-total-display');
-                const vatDisplay = document.getElementById('modal-vat-display');
-                if (totalDisplay) totalDisplay.textContent = priceBreakdown.finalTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
-                if (vatDisplay) {
-                    const subTotalFormatted = priceBreakdown.subTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
-                    const vatFormatted = priceBreakdown.vat.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
-                    vatDisplay.textContent = `(${subTotalFormatted} + ${vatFormatted} moms)`;
-                }
-            };
-
-            const updateLiveFormData = (key, value) => { state.formData[key] = value; updatePriceDisplay(); };
+            const updateLiveFormData = (key, value) => { state.formData[key] = value; state.formData.total = calculateTotal(state.formData); const totalDisplay = document.getElementById('modal-total-display'); if (totalDisplay) totalDisplay.textContent = state.formData.total.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' }); };
             const updateNestedFormData = (arrayName, id, field, value) => { const item = state.formData[arrayName].find(i => i.id === id); if (item) item[field] = value; updateLiveFormData(arrayName, state.formData[arrayName]); };
             
             const createInputGroup = (label, name, value, type = 'text', onInput, extraClasses = '') => { const div = document.createElement('div'); div.className = extraClasses; div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label>`; const input = document.createElement('input'); input.type = type; input.name = name; input.value = value || ''; if (type === 'number') input.step = 'any'; input.className = `w-full p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`; input.oninput = (e) => onInput(name, type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value); div.appendChild(input); return div; };
@@ -1194,8 +1184,6 @@
                 const endTimePicker = createInputGroup('Sluttid', 'eventEndTime', formData.eventEndTime, 'text', () => {}); endTimePicker.querySelector('input').readOnly = true; endTimePicker.querySelector('input').onclick = () => setState({ isTimePickerOpen: true, timePickerTarget: 'eventEndTime'}, {render: 'full'}); container.appendChild(endTimePicker);
                 container.appendChild(createInputGroup('Antal gäster', 'guestCount', formData.guestCount, 'number', updateLiveFormData));
                 container.appendChild(createInputGroup('Pris per kuvert (SEK)', 'pricePerGuest', formData.pricePerGuest, 'number', updateLiveFormData));
-                container.appendChild(createInputGroup('Eventplats', 'eventLocation', formData.eventLocation, 'text', updateLiveFormData));
-                container.appendChild(createInputGroup('Eventtyp', 'eventType', formData.eventType, 'text', updateLiveFormData));
                 const customerRequests = createTextareaGroup('Kundens önskemål', 'customerRequests', formData.customerRequests, updateLiveFormData, 4); customerRequests.className = 'md:col-span-2 lg:col-span-3'; container.appendChild(customerRequests);
                 return container;
             }));
@@ -1259,7 +1247,6 @@
 
             main.appendChild(createSection('Systemdata (skrivskyddad)', 'system', () => {
                 const container = document.createElement('div'); container.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
-                container.appendChild(createReadonlyGroup('Airtable Record ID', formData.recordId));
                 container.appendChild(createReadonlyGroup('Förslag skickat datum', formData.sentDate));
                 const aiLog = createTextareaGroup('AI Agent Rådata', 'aiRawLog', formData.aiRawLog, () => {}, 5);
                 aiLog.querySelector('textarea').readOnly = true;
@@ -1275,25 +1262,12 @@
             leftFooter.innerHTML = `<button id="delete-btn" class="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}" title="Radera ärende">${icons.trash()}</button><button id="copy-btn" class="${classes.accent} hover:text-cyan-500 text-sm font-semibold ${classes.focus}">Kopiera Ärende</button>`;
             leftFooter.querySelector('#delete-btn').onclick = () => requestDeleteConfirmation(formData);
             leftFooter.querySelector('#copy-btn').onclick = () => handleCopyQuote(formData);
-            
             const rightFooter = document.createElement('div');
             rightFooter.className = 'flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto';
-            
-            const priceContainer = document.createElement('div');
-            priceContainer.className = 'text-right';
-            const priceBreakdown = calculateTotal(formData);
             const totalDisplay = document.createElement('p');
             totalDisplay.id = 'modal-total-display';
             totalDisplay.className = `font-bold text-xl ${classes.accent}`;
-            totalDisplay.textContent = priceBreakdown.finalTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
-            const vatDisplay = document.createElement('p');
-            vatDisplay.id = 'modal-vat-display';
-            vatDisplay.className = `text-xs ${classes.textSecondary}`;
-            const subTotalFormatted = priceBreakdown.subTotal.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
-            const vatFormatted = priceBreakdown.vat.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
-            vatDisplay.textContent = `(${subTotalFormatted} + ${vatFormatted} moms)`;
-            priceContainer.append(totalDisplay, vatDisplay);
-
+            totalDisplay.textContent = (formData.total || 0).toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
             const buttonsContainer = document.createElement('div');
             buttonsContainer.className = 'flex gap-2 w-full sm:w-auto';
             const exportButton = document.createElement('button');
@@ -1301,27 +1275,17 @@
             exportButton.innerHTML = `${icons.filePdf()} Exportera`;
             exportButton.onclick = () => generateQuotePdf(formData);
             const saveButton = document.createElement('button');
-            saveButton.className = `w-full sm:w-auto ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
-            saveButton.textContent = formData.recordId ? 'Spara Ändringar' : 'Skapa Ärende';
+            saveButton.className = `w-full sm:w-auto ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
+            saveButton.textContent = 'Spara';
             saveButton.onclick = () => handleSaveQuote(formData);
             const actionButton = document.createElement('button');
             actionButton.className = `w-full sm:w-auto px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
             if (formData.status === 'utkast') { actionButton.textContent = 'Skicka Förslag'; actionButton.className += ` ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover}`; actionButton.onclick = () => requestSendConfirmation(formData); }
             else if (formData.status === 'förslag-skickat') { actionButton.textContent = 'Godkänn Förslag'; actionButton.className += ' bg-green-500 text-white hover:bg-green-600'; actionButton.onclick = () => requestApproveConfirmation(formData); }
             else { actionButton.textContent = 'Åtgärd'; actionButton.className += ` ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} opacity-50 cursor-not-allowed`; actionButton.disabled = true; }
-            if (!formData.recordId) actionButton.disabled = true; // Can't perform actions on unsaved quote
             buttonsContainer.append(exportButton, saveButton, actionButton);
-            rightFooter.append(priceContainer, buttonsContainer);
+            rightFooter.append(totalDisplay, buttonsContainer);
             footer.append(leftFooter, rightFooter);
-            
-            if (state.isSaving) {
-                const savingOverlay = document.createElement('div');
-                savingOverlay.className = 'absolute inset-0 bg-white/70 dark:bg-gray-800/70 flex items-center justify-center rounded-xl z-20';
-                savingOverlay.innerHTML = `<div class="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin-fast"></div>`;
-                modalContent.appendChild(savingOverlay);
-                modalContent.querySelectorAll('input, textarea, button, select').forEach(el => el.disabled = true);
-            }
-
             modalContent.append(header, main, footer);
             
             if (state.isMicroCalendarOpen) {
@@ -1335,19 +1299,101 @@
             return modalOverlay;
         }
 
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        function SearchFilterModal() {
+            if (!state.isSearchFilterModalOpen) return null;
+            const classes = themes[state.theme];
+            const overlay = document.createElement('div');
+            overlay.className = `fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 animate-fade-in-fast ${classes.modalOverlay}`;
+            overlay.onclick = () => setState({ isSearchFilterModalOpen: false });
+            
+            const modalContent = document.createElement('div');
+            modalContent.className = `${classes.cardBg} w-full max-w-lg rounded-xl shadow-2xl p-6 animate-fade-in-scale`;
+            modalContent.onclick = e => e.stopPropagation();
+
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center mb-6';
+            const title = createElement('h2', ['text-xl', 'font-bold'], [t('controls.search_and_filter')]);
+            const closeButton = document.createElement('button');
+            closeButton.className = `p-2 -mt-2 -mr-2 rounded-full hover:bg-red-500/10 ${classes.focus}`;
+            closeButton.innerHTML = icons.x("w-6 h-6 hover:text-red-500");
+            closeButton.onclick = () => setState({ isSearchFilterModalOpen: false });
+            header.append(title, closeButton);
+
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = t('controls.search_placeholder');
+            searchInput.className = `w-full p-3 mb-6 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`;
+            searchInput.oninput = (e) => setState({ searchTerm: e.target.value }, { render: 'full' });
+            searchInput.value = state.searchTerm;
+            setTimeout(() => searchInput.focus(), 50);
+
+            const filterGrid = document.createElement('div');
+            filterGrid.className = 'grid grid-cols-2 sm:grid-cols-3 gap-2';
+            const allFilters = [
+                { id: 'prioriterade', label: t('controls.prioritized') }, { id: 'aktiva', label: t('controls.active') },
+                { id: 'kommande', label: t('controls.upcoming') }, { id: 'utkast', label: t('status.utkast') }, 
+                { id: 'förslag-skickat', label: t('status.förslag-skickat') }, { id: 'godkänd', label: t('status.godkänd') }, 
+                { id: 'genomförd', label: t('status.genomförd') }, { id: 'betald', label: t('status.betald') },
+                { id: 'förlorad', label: t('status.förlorad') }, { id: 'arkiverad', label: t('status.arkiverad') }
+            ];
+            allFilters.forEach(f => {
+                const button = document.createElement('button');
+                button.textContent = f.label;
+                button.className = `w-full px-4 py-2 text-sm font-medium rounded-md transition-colors ${classes.focus} ${state.filter === f.id ? classes.filterActive : classes.filterInactive}`;
+                button.onclick = () => { setState({ filter: f.id, displayLimit: 12, isSearchFilterModalOpen: false }); };
+                filterGrid.appendChild(button);
+            });
+
+            const sortContainer = document.createElement('div');
+            sortContainer.className = 'mt-6 pt-4 border-t border-slate-200 dark:border-gray-700';
+            sortContainer.innerHTML = `<h3 class="text-sm font-semibold mb-2 ${classes.textSecondary}">${t('controls.sort_by')}</h3>`;
+
+            const sortButtons = document.createElement('div');
+            sortButtons.className = 'flex items-center justify-between';
+
+            const sortByGroup = document.createElement('div');
+            sortByGroup.className = 'flex items-center gap-2 flex-wrap';
+
+            const sortOptions = [
+                { id: 'eventDate', label: t('controls.sort.event_date') },
+                { id: 'total', label: t('controls.sort.total') },
+                { id: 'customer', label: t('controls.sort.customer') }
+            ];
+
+            sortOptions.forEach(opt => {
+                const button = document.createElement('button');
+                button.textContent = opt.label;
+                button.className = `px-3 py-1 text-sm rounded-md transition-colors ${state.sortBy === opt.id ? classes.filterActive : classes.filterInactive}`;
+                button.onclick = () => setState({ sortBy: opt.id }, { render: 'full' });
+                sortByGroup.appendChild(button);
+            });
+
+            const sortDirectionButton = document.createElement('button');
+            sortDirectionButton.className = `p-2 rounded-md ${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover}`;
+            sortDirectionButton.innerHTML = state.sortDirection === 'asc' ? icons.arrowUp('w-5 h-5') : icons.arrowDown('w-5 h-5');
+            sortDirectionButton.onclick = () => setState({ sortDirection: state.sortDirection === 'asc' ? 'desc' : 'asc' }, { render: 'full' });
+
+            sortButtons.append(sortByGroup, sortDirectionButton);
+            sortContainer.appendChild(sortButtons);
+
+            modalContent.append(header, searchInput, filterGrid, sortContainer);
+            overlay.appendChild(modalContent);
+            return overlay;
+        }
+
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- HUVUD-RENDERINGSFUNKTION ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         function renderApp() {
             appRoot.innerHTML = '';
             const classes = themes[state.theme];
             document.documentElement.className = classes.htmlClass;
             document.body.className = `${classes.bg} ${classes.text}`;
 
-            const isModalOpen = state.selectedQuoteId || state.confirmationState.isOpen || state.isHubOpen;
+            const isModalOpen = state.selectedQuoteId || state.confirmationState.isOpen || state.isHubOpen || state.isSearchFilterModalOpen;
             
             const mainContentContainer = document.createElement('div');
-            mainContentContainer.className = `flex flex-col h-screen transition-all duration-300 ${isModalOpen && !state.isSaving ? 'filter blur-md' : ''}`;
+            mainContentContainer.className = `flex flex-col h-screen transition-all duration-300 ${isModalOpen ? 'filter blur-md' : ''}`;
             
             if (!state.isLoggedIn) {
                 mainContentContainer.appendChild(SimpleLoginScreen());
@@ -1362,6 +1408,9 @@
             }
             appRoot.appendChild(mainContentContainer);
 
+            if (state.isSearchFilterModalOpen) {
+                appRoot.appendChild(SearchFilterModal());
+            }
             if (state.selectedQuoteId) {
                  appRoot.appendChild(EditModal());
             }
@@ -1373,9 +1422,9 @@
             if (state.toast) appRoot.appendChild(Toast(state.toast));
         }
         
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         // --- INITIALISERING ---
-        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
         async function loadInitialData() {
             setState({ isLoading: true });
             try {
