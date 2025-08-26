@@ -433,7 +433,39 @@
                 });
         }
 
-        function handleNewQuote() { const newQuoteData = { id: `GK-${Date.now()}`, recordId: null, status: 'utkast', customer: '', customerType: 'privat', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat' }], customCosts: [], customDiets: [], standardDiets: {}, total: 0 }; setState({ selectedQuoteId: newQuoteData.id, formData: newQuoteData }); }
+        function handleNewQuote() { 
+            const newQuoteData = { 
+                id: `GK-${Date.now()}`, 
+                recordId: null, 
+                status: 'utkast', 
+                customer: '', 
+                customerType: 'privat', 
+                contactPerson: '',
+                customerIdNumber: '',
+                contactEmail: '',
+                contactPhone: '',
+                address: '',
+                guestCount: 0,
+                eventDate: new Date().toISOString().split('T')[0], 
+                eventStartTime: "17:00",
+                eventEndTime: "01:00",
+                pricePerGuest: 0,
+                menuDescription: '',
+                customerRequests: '',
+                numChefs: 0,
+                chefCost: 0,
+                numServingStaff: 0,
+                servingStaffCost: 0,
+                discountAmount: 0,
+                internalComment: '',
+                events: [{ timestamp: new Date().toISOString(), event: 'Ärende skapat' }], 
+                customCosts: [], 
+                customDiets: [], 
+                standardDiets: {}, 
+                total: 0 
+            }; 
+            setState({ selectedQuoteId: newQuoteData.id, formData: newQuoteData }); 
+        }
         function handleCopyQuote(quoteToCopy) { const newQuoteData = { ...JSON.parse(JSON.stringify(quoteToCopy)), id: `GK-${Date.now()}`, recordId: null, status: 'utkast', eventDate: new Date().toISOString().split('T')[0], events: [{ timestamp: new Date().toISOString(), event: `Kopia från ${quoteToCopy.id}.` }] }; delete newQuoteData.total; handleSaveQuote(newQuoteData); showToast(t('toast.copied'), 'success'); }
         function handleDeleteQuote(quoteToDelete) { setState({ lastDeleted: quoteToDelete, quotes: state.quotes.filter(q => q.id !== quoteToDelete.id), selectedQuoteId: null, formData: null, }); showToast(t('toast.deleted', {id: quoteToDelete.id}), 'success', { undoable: true }); }
         function handleUndoDelete() { if (state.lastDeleted) { const newQuotes = [...state.quotes, state.lastDeleted].sort((a,b) => new Date(b.events[0]?.timestamp) - new Date(a.events[0]?.timestamp)); setState({ quotes: newQuotes, lastDeleted: null, toast: null }); clearTimeout(toastTimer); } }
