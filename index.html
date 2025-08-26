@@ -48,6 +48,9 @@
             scrollbar-width: none;  /* Firefox */
             scroll-snap-type: y mandatory;
             scroll-behavior: smooth;
+            /* Lägger till padding för att kunna centrera första/sista elementet */
+            padding-top: 72px; /* (Container height - item height) / 2 */
+            padding-bottom: 72px;
         }
         .time-picker-column::-webkit-scrollbar {
             display: none; /* Chrome, Safari and Opera */
@@ -1021,23 +1024,19 @@
             const [initialHour, initialMinute] = (initialTime || "12:00").split(':').map(Number);
             
             const timeScroller = document.createElement('div');
-            timeScroller.className = 'relative flex justify-center items-center h-60 gap-2'; // h-60 = 15rem, 5 items synliga
+            timeScroller.className = 'relative flex justify-center items-center h-48 opacity-0 transition-opacity duration-200';
 
             const indicator = document.createElement('div');
             indicator.className = `absolute inset-x-0 top-1/2 -translate-y-1/2 h-12 rounded-lg ${classes.inputBg} border-y-2 ${classes.border}`;
             timeScroller.appendChild(indicator);
 
             const columnsContainer = document.createElement('div');
-            columnsContainer.className = 'flex justify-center items-center gap-2 z-10';
+            columnsContainer.className = 'flex justify-center items-center gap-2 z-10 h-full';
 
             const createColumn = (max, initialValue) => {
                 const column = document.createElement('div');
                 column.className = 'w-16 h-full overflow-y-scroll hide-scrollbar text-center text-2xl time-picker-column';
                 
-                const paddingTop = document.createElement('div');
-                paddingTop.style.height = '96px'; // 2 * 48px item height
-                column.appendChild(paddingTop);
-
                 for (let i = 0; i < max; i++) {
                     const el = document.createElement('div');
                     el.className = 'h-12 flex items-center justify-center flex-shrink-0'; // h-12 = 3rem = 48px
@@ -1045,11 +1044,10 @@
                     column.appendChild(el);
                 }
 
-                const paddingBottom = document.createElement('div');
-                paddingBottom.style.height = '96px'; // 2 * 48px item height
-                column.appendChild(paddingBottom);
-
-                setTimeout(() => { column.scrollTop = initialValue * 48; }, 0);
+                setTimeout(() => { 
+                    column.scrollTop = initialValue * 48; 
+                    timeScroller.classList.remove('opacity-0');
+                }, 10);
                 return column;
             };
             const hourCol = createColumn(24, initialHour);
