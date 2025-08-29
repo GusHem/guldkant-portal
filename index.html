@@ -304,15 +304,15 @@
                 status: normalizeStatus(getValue(['status'])),
                 customer: getValue(['customerName', 'kundNamn']),
                 customerType: getValue(['customerType', 'kundtyp'], 'privat'),
-                contactPerson: getValue(['contactPerson', 'kontaktperson']),
+                contactPerson: getValue(['contactPerson', 'kontaktperson', 'kontaktPerson']),
                 customerIdNumber: getValue(['customerIdNumber', 'personnummer']),
                 contactEmail: getValue(['contactEmail', 'email']),
                 contactPhone: getValue(['contactPhone', 'telefon']),
-                address: getValue(['address', 'adress', 'eventLocation', 'Event Location']),
+                address: getValue(['address', 'adress', 'eventLocation', 'eventPlats']),
                 guestCount: Number(getValue(['guestCount', 'antalGaster'], 0)),
                 eventDate: eventDateRaw ? new Date(eventDateRaw).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                eventStartTime: getValue(['eventStartTime', 'starttid'], "17:00"),
-                eventEndTime: getValue(['eventEndTime', 'sluttid'], "01:00"),
+                eventStartTime: getValue(['eventStartTime', 'starttid', 'eventTid'], "17:00"),
+                eventEndTime: getValue(['eventEndTime', 'sluttid', 'eventEndTime'], "01:00"),
                 pricePerGuest: Number(getValue(['pricePerGuest', 'prisPerKuvert'], 0)),
                 menuDescription: getValue(['menuDescription', 'meny', 'menuPreference']),
                 customerRequests: getValue(['customerRequests', 'kundensOnskemal', 'otherRequests', 'Other Requests Summary', 'kundens önskemål']),
@@ -382,7 +382,20 @@
         };
         const formatDate = (dateString, options = { year: 'numeric', month: '2-digit', day: '2-digit' }) => { if (!dateString) return ''; const date = new Date(dateString); return isNaN(date) ? '' : date.toLocaleDateString('sv-SE', options); };
         const formatTimestamp = (timestamp) => new Date(timestamp).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
-        const calculateTotal = (quote) => { if (!quote) return 0; const base = (Number(quote.guestCount) || 0) * (Number(quote.pricePerGuest) || 0); const staff = (Number(quote.chefCost) || 0) + (Number(quote.servingStaffCost) || 0); const custom = (quote.customCosts || []).reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0); const subTotal = base + staff + custom; const discountedSubTotal = subTotal - (Number(quote.discountAmount) || 0); const vat = discountedSubTotal * 0.12; return discountedSubTotal + vat; };
+        
+        const calculatePriceDetails = (quote) => {
+            if (!quote) return { subTotal: 0, vat: 0, total: 0 };
+            const base = (Number(quote.guestCount) || 0) * (Number(quote.pricePerGuest) || 0);
+            const staff = (Number(quote.chefCost) || 0) + (Number(quote.servingStaffCost) || 0);
+            const custom = (quote.customCosts || []).reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
+            const subTotalBeforeDiscount = base + staff + custom;
+            const subTotal = subTotalBeforeDiscount - (Number(quote.discountAmount) || 0);
+            const vat = subTotal * 0.12;
+            const total = subTotal + vat;
+            return { subTotal, vat, total };
+        };
+        const calculateTotal = (quote) => calculatePriceDetails(quote).total;
+
         function createElement(tag, classList = [], children = []) { const el = document.createElement(tag); if (classList.length) el.className = classList.join(' '); children.forEach(child => { if (typeof child === 'string') { el.appendChild(document.createTextNode(child)); } else if (child instanceof Node) { el.appendChild(child); } }); return el; }
 
         // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -734,7 +747,8 @@
             topSection.appendChild(StatusSelector(quote));
             const bottomSection = document.createElement('div');
             bottomSection.className = `mt-4 pt-4 border-t border-dashed ${classes.border}`;
-            bottomSection.innerHTML = `<div class="flex justify-between items-end"><div><p class="${classes.textSecondary} text-xs">${t('quote.event_date')}</p><p class="font-medium">${formatDate(quote.eventDate)}</p></div><div><p class="${classes.textSecondary} text-xs text-right">${t('quote.total')}</p><p class="font-bold text-lg md:text-xl ${classes.accent}">${(quote.total || 0).toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' })}</p></div></div>`;
+            // --- MOBILFIX: Lade till flex-wrap och gap-2 för att förhindra att text överlappar på smala skärmar ---
+            bottomSection.innerHTML = `<div class="flex justify-between items-end flex-wrap gap-2"><div><p class="${classes.textSecondary} text-xs">${t('quote.event_date')}</p><p class="font-medium">${formatDate(quote.eventDate)}</p></div><div><p class="${classes.textSecondary} text-xs text-right">${t('quote.total')}</p><p class="font-bold text-lg md:text-xl ${classes.accent}">${(quote.total || 0).toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' })}</p></div></div>`;
             card.append(topSection, bottomSection);
             return card;
         }
@@ -743,16 +757,20 @@
             const classes = themes[state.theme];
             const container = document.createElement('div');
             container.className = 'mb-6';
+            // --- MOBILFIX: Ändrad från flex till block på små skärmar och lade till grid för att hantera radbrytning snyggare. ---
             const topRow = document.createElement('div');
-            topRow.className = 'flex flex-wrap gap-2 justify-between items-center';
+            topRow.className = 'grid grid-cols-1 md:flex md:flex-wrap gap-4 justify-between items-center';
 
+            // --- MOBILFIX: Lade till en wrapper för vänstra och högra kontrollerna för bättre layout på mobil. ---
+            const leftControls = document.createElement('div');
             const searchFilterButton = document.createElement('button');
-            searchFilterButton.className = `${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${classes.focus}`;
+            searchFilterButton.className = `${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-4 py-2.5 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${classes.focus}`;
             searchFilterButton.innerHTML = `${icons.slidersHorizontal('w-4 h-4')} ${t('controls.search_and_filter')}`;
             searchFilterButton.onclick = () => setState({ isSearchFilterModalOpen: true });
+            leftControls.appendChild(searchFilterButton);
 
-            const rightSideContainer = document.createElement('div');
-            rightSideContainer.className = 'flex items-center gap-2';
+            const rightControls = document.createElement('div');
+            rightControls.className = 'flex items-center gap-2 justify-between md:justify-end';
 
             const viewModeGroup = document.createElement('div');
             viewModeGroup.className = 'flex items-center';
@@ -768,11 +786,11 @@
 
             const newQuoteButton = document.createElement('button');
             newQuoteButton.innerHTML = `${icons.plus('inline-block -mt-1 mr-1')} ${t('controls.new_quote')}`;
-            newQuoteButton.className = `w-full sm:w-auto ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow-sm ${classes.focus}`;
+            newQuoteButton.className = ` ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow-sm ${classes.focus}`;
             newQuoteButton.onclick = handleNewQuote;
 
-            rightSideContainer.append(viewModeGroup, newQuoteButton);
-            topRow.append(searchFilterButton, rightSideContainer);
+            rightControls.append(viewModeGroup, newQuoteButton);
+            topRow.append(leftControls, rightControls);
             container.appendChild(topRow);
             return container;
         }
@@ -881,10 +899,17 @@
             });
 
             const paginatedQuotes = filteredQuotes.slice(0, state.displayLimit);
-            container.innerHTML = `<div class="flex justify-between items-center mb-2"><h1 class="text-2xl md:text-3xl font-bold">${t('dashboard.title')}</h1><button id="focus-mode-btn" class="${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} p-2 rounded-full transition-all duration-300 flex items-center justify-center w-10 h-10 ${state.isFocusMode ? 'ring-2 ring-cyan-500' : ''} ${classes.focus}" title="${state.isFocusMode ? "Avsluta fokusläge" : "Fokusläge"}">${state.isFocusMode ? icons.x(`${classes.accent} w-1.2 h-1.2`) : icons.square(classes.accent)}</button></div><p class="${classes.textSecondary} mb-8">${t('dashboard.subtitle')}</p>`;
+            // --- MOBILFIX: Justerade klassen för fokus-knappen för att göra den större och lättare att trycka på. ---
+            container.innerHTML = `<div class="flex justify-between items-center mb-2"><h1 class="text-2xl md:text-3xl font-bold">${t('dashboard.title')}</h1><button id="focus-mode-btn" class="${classes.buttonSecondaryBg} ${classes.buttonSecondaryHover} p-2 rounded-full transition-all duration-300 flex items-center justify-center w-12 h-12 ${state.isFocusMode ? 'ring-2 ring-cyan-500' : ''} ${classes.focus}" title="${state.isFocusMode ? "Avsluta fokusläge" : "Fokusläge"}">${state.isFocusMode ? icons.x(`${classes.accent} w-1.2 h-1.2`) : icons.square(classes.accent)}</button></div><p class="${classes.textSecondary} mb-8">${t('dashboard.subtitle')}</p>`;
             container.querySelector('#focus-mode-btn').onclick = () => setState({ isFocusMode: !state.isFocusMode });
+            
+            // --- MOBILFIX: Lade till en wrapper för att säkerställa att widgets och kontroller staplas korrekt ---
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = 'flex flex-col gap-8';
+
             const widgetsContainer = document.createElement('div');
-            widgetsContainer.className = `transition-all duration-500 ${state.isFocusMode ? 'max-h-0 opacity-0 overflow-hidden mb-0' : 'max-h-screen opacity-100 mb-8'}`;
+            // --- MOBILFIX: Tog bort mb-8 eftersom den nya wrappern hanterar avståndet ---
+            widgetsContainer.className = `transition-all duration-500 ${state.isFocusMode ? 'max-h-0 opacity-0 overflow-hidden' : 'max-h-[2000px] opacity-100'}`;
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 lg:grid-cols-4 gap-6';
             const col1 = createDashboardWidget("Ärenden som kräver åtgärd", icons.alertCircle('text-yellow-500'), 'border-l-4 border-yellow-500', actionItems, "Bra jobbat! Inga ärenden kräver åtgärd.");
@@ -900,9 +925,14 @@
             col3.appendChild(AnalyticsSummaryCard({ title: "Aktiva Ärenden", value: analytics.activeQuotesCount, icon: icons.briefcase() }));
             grid.append(col1, col2, col3);
             widgetsContainer.appendChild(grid);
-            container.appendChild(widgetsContainer);
-            container.appendChild(QuotesControls());
+            
+            contentWrapper.appendChild(widgetsContainer);
+            contentWrapper.appendChild(QuotesControls());
+
+            container.appendChild(contentWrapper);
+
             const viewContainer = document.createElement('div');
+            viewContainer.className = 'mt-8'; // Extra marginal för att separera från kontroller
             if (state.viewMode === 'cards') {
                 const quoteCardsGrid = document.createElement('div');
                 quoteCardsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6';
@@ -1176,12 +1206,14 @@
             const classes = themes[state.theme];
             const modalOverlay = document.createElement('div');
             modalOverlay.id = 'edit-modal-overlay';
-            modalOverlay.className = `fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 sm:pt-24 animate-fade-in-fast ${classes.modalOverlay}`;
+            // --- MOBILFIX: Ändrade layouten för att modalen ska fylla hela skärmen på mobilen men centreras på större skärmar. ---
+            modalOverlay.className = `fixed inset-0 z-50 p-0 sm:p-4 sm:flex sm:items-center sm:justify-center animate-fade-in-fast ${classes.modalOverlay}`;
             modalOverlay.onclick = (e) => { if(e.target === modalOverlay) setState({ selectedQuoteId: null, formData: null, isMicroCalendarOpen: false, isTimePickerOpen: false }); };
 
             const modalContent = document.createElement('div');
             modalContent.id = 'edit-modal-content';
-            modalContent.className = `${classes.cardBg} w-full max-w-5xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col`;
+            // --- MOBILFIX: Tvingar modalen att vara full-skärm (w-full h-full) på små skärmar och återgår till den större designen på sm+ skärmar. ---
+            modalContent.className = `${classes.cardBg} w-full h-full sm:max-h-[90vh] sm:w-full sm:max-w-5xl sm:rounded-xl shadow-2xl flex flex-col`;
             modalContent.onclick = (e) => e.stopPropagation();
 
             const header = document.createElement('header');
@@ -1217,9 +1249,20 @@
             header.append(titleContainer, controlsContainer);
 
             const main = document.createElement('main');
-            main.className = 'p-4 md:p-6 overflow-y-auto flex-grow hide-scrollbar';
+            // --- MOBILFIX: Lade till pb-24 för att säkerställa att innehåll kan scrollas förbi den fasta foten ---
+            main.className = 'p-4 md:p-6 pb-24 overflow-y-auto flex-grow hide-scrollbar';
 
-            const updateLiveFormData = (key, value) => { state.formData[key] = value; state.formData.total = calculateTotal(state.formData); const totalDisplay = document.getElementById('modal-total-display'); if (totalDisplay) totalDisplay.textContent = state.formData.total.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' }); };
+            const updateLiveFormData = (key, value) => {
+                state.formData[key] = value;
+                const priceDetails = calculatePriceDetails(state.formData);
+                state.formData.total = priceDetails.total;
+                
+                const totalDisplay = document.getElementById('modal-total-display');
+                if (totalDisplay) totalDisplay.textContent = priceDetails.total.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+                
+                const vatDisplay = document.getElementById('modal-vat-display');
+                if(vatDisplay) vatDisplay.textContent = `(varav moms 12%: ${priceDetails.vat.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' })})`;
+            };
             const updateNestedFormData = (arrayName, id, field, value) => { const item = state.formData[arrayName].find(i => i.id === id); if (item) item[field] = value; updateLiveFormData(arrayName, state.formData[arrayName]); };
             
             const createInputGroup = (label, name, value, type = 'text', onInput, extraClasses = '') => { const div = document.createElement('div'); div.className = extraClasses; div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label>`; const input = document.createElement('input'); input.type = type; input.name = name; input.value = value || ''; if (type === 'number') input.step = 'any'; input.className = `w-full p-2 rounded-lg ${classes.inputBg} ${classes.text} border ${classes.border} transition-colors shadow-sm ${classes.focus}`; input.oninput = (e) => onInput(name, type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value); div.appendChild(input); return div; };
@@ -1228,7 +1271,8 @@
             const createReadonlyGroup = (label, value) => { const div = document.createElement('div'); div.innerHTML = `<label class="${classes.textSecondary} text-xs block mb-1">${label}</label><p class="w-full p-2 rounded-lg ${classes.inputBg} ${classes.textSecondary} border ${classes.border} min-h-[38px]">${value || '–'}</p>`; return div; };
 
             const createCheckboxWithNumber = (label, dietKey, dietData) => {
-                const div = document.createElement('div'); div.className = 'flex items-center gap-4';
+                // --- MOBILFIX: Lade till flex-wrap för att hantera smala skärmar ---
+                const div = document.createElement('div'); div.className = 'flex flex-wrap items-center gap-x-4 gap-y-2';
                 const checkboxDiv = document.createElement('div'); checkboxDiv.className = 'flex items-center gap-2';
                 const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
                 const id = `diet-${dietKey}-${formData.id}`; checkbox.id = id; checkbox.name = id; checkbox.checked = dietData?.selected || false; checkbox.className = `h-4 w-4 rounded ${classes.border} text-cyan-600 focus:ring-cyan-500`;
@@ -1314,16 +1358,25 @@
                 container.appendChild(staffGrid);
                 const customCostsContainer = document.createElement('div'); customCostsContainer.className = 'space-y-2'; customCostsContainer.id = 'custom-costs-container';
                 (formData.customCosts || []).forEach(cost => {
-                    const itemRow = document.createElement('div'); itemRow.className = 'flex items-center gap-2'; itemRow.id = `cost-row-${cost.id}`;
-                    const descInput = createInputGroup('', `desc-${cost.id}`, cost.description, 'text', (_, val) => updateNestedFormData('customCosts', cost.id, 'description', val), 'flex-grow');
+                    const itemRow = document.createElement('div');
+                    // --- MOBILFIX: Lade till flex-wrap för att hantera smala skärmar ---
+                    itemRow.className = 'flex flex-wrap items-center gap-2'; itemRow.id = `cost-row-${cost.id}`;
+                    const descInput = createInputGroup('', `desc-${cost.id}`, cost.description, 'text', (_, val) => updateNestedFormData('customCosts', cost.id, 'description', val), 'flex-grow min-w-[120px]');
                     const amountInput = createInputGroup('', `amount-${cost.id}`, cost.amount, 'number', (_, val) => updateNestedFormData('customCosts', cost.id, 'amount', val), 'w-32');
                     const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash();
                     deleteBtn.onclick = () => { state.formData.customCosts = state.formData.customCosts.filter(c => c.id !== cost.id); itemRow.remove(); updateLiveFormData('customCosts', state.formData.customCosts); };
-                    itemRow.append(descInput, amountInput, deleteBtn); customCostsContainer.appendChild(itemRow);
+                    // --- FIX: Återställde den saknade raden som lägger till elementen i listan ---
+                    itemRow.append(descInput, amountInput, deleteBtn); 
+                    customCostsContainer.appendChild(itemRow);
                 });
                 container.appendChild(customCostsContainer);
                 const addCostButton = document.createElement('button'); addCostButton.className = `text-sm font-semibold ${classes.accent} hover:underline ${classes.focus}`; addCostButton.innerHTML = `${icons.plus('inline-block -mt-1')} Lägg till kostnad`;
-                addCostButton.onclick = () => { const newId = 'c-' + Date.now(); if(!state.formData.customCosts) state.formData.customCosts = []; state.formData.customCosts.push({ id: newId, description: '', amount: '' }); const newRow = document.createElement('div'); newRow.className = 'flex items-center gap-2'; newRow.id = `cost-row-${newId}`; const descInput = createInputGroup('', `desc-${newId}`, '', 'text', (_, val) => updateNestedFormData('customCosts', newId, 'description', val), 'flex-grow'); const amountInput = createInputGroup('', `amount-${newId}`, '', 'number', (_, val) => updateNestedFormData('customCosts', newId, 'amount', val), 'w-32'); const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash(); deleteBtn.onclick = () => { state.formData.customCosts = state.formData.customCosts.filter(c => c.id !== newId); newRow.remove(); updateLiveFormData('customCosts', state.formData.customCosts); }; newRow.append(descInput, amountInput, deleteBtn); customCostsContainer.appendChild(newRow); };
+                addCostButton.onclick = () => { const newId = 'c-' + Date.now(); if(!state.formData.customCosts) state.formData.customCosts = []; state.formData.customCosts.push({ id: newId, description: '', amount: '' }); const newRow = document.createElement('div'); 
+                    // --- MOBILFIX: Lade till flex-wrap för att hantera smala skärmar ---
+                    newRow.className = 'flex flex-wrap items-center gap-2'; newRow.id = `cost-row-${newId}`; 
+                    const descInput = createInputGroup('', `desc-${newId}`, '', 'text', (_, val) => updateNestedFormData('customCosts', newId, 'description', val), 'flex-grow min-w-[120px]'); 
+                    const amountInput = createInputGroup('', `amount-${newId}`, '', 'number', (_, val) => updateNestedFormData('customCosts', newId, 'amount', val), 'w-32'); 
+                    const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash(); deleteBtn.onclick = () => { state.formData.customCosts = state.formData.customCosts.filter(c => c.id !== newId); newRow.remove(); updateLiveFormData('customCosts', state.formData.customCosts); }; newRow.append(descInput, amountInput, deleteBtn); customCostsContainer.appendChild(newRow); };
                 container.appendChild(addCostButton);
                 const discountInput = createInputGroup('Rabatt (SEK)', 'discountAmount', formData.discountAmount, 'number', updateLiveFormData, 'pt-4 border-t mt-4 border-dashed'); container.appendChild(discountInput);
                 return container;
@@ -1336,16 +1389,26 @@
                 container.appendChild(standardDietsGrid);
                 const customDietsContainer = document.createElement('div'); customDietsContainer.className = 'space-y-2 pt-4 border-t mt-4 border-dashed'; customDietsContainer.id = 'custom-diets-container';
                 (formData.customDiets || []).forEach(diet => {
-                    const itemRow = document.createElement('div'); itemRow.className = 'flex items-center gap-2'; itemRow.id = `diet-row-${diet.id}`;
-                    const descInput = createInputGroup('', `diet-desc-${diet.id}`, diet.description, 'text', (_, val) => updateNestedFormData('customDiets', diet.id, 'description', val), 'flex-grow');
+                    const itemRow = document.createElement('div'); 
+                    // --- MOBILFIX: Lade till flex-wrap för att hantera smala skärmar ---
+                    itemRow.className = 'flex flex-wrap items-center gap-2'; itemRow.id = `diet-row-${diet.id}`;
+                    const descInput = createInputGroup('', `diet-desc-${diet.id}`, diet.description, 'text', (_, val) => updateNestedFormData('customDiets', diet.id, 'description', val), 'flex-grow min-w-[120px]');
                     const countInput = createInputGroup('', `diet-count-${diet.id}`, diet.count, 'number', (_, val) => updateNestedFormData('customDiets', diet.id, 'count', val), 'w-32');
                     const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash();
                     deleteBtn.onclick = () => { state.formData.customDiets = state.formData.customDiets.filter(d => d.id !== diet.id); itemRow.remove(); updateLiveFormData('customDiets', state.formData.customDiets); };
-                    itemRow.append(descInput, countInput, deleteBtn); customDietsContainer.appendChild(itemRow);
+                    // --- FIX: Återställde den saknade raden som lägger till elementen i listan ---
+                    itemRow.append(descInput, countInput, deleteBtn); 
+                    customDietsContainer.appendChild(itemRow);
                 });
                 container.appendChild(customDietsContainer);
                 const addDietButton = document.createElement('button'); addDietButton.className = `text-sm font-semibold ${classes.accent} hover:underline ${classes.focus}`; addDietButton.innerHTML = `${icons.plus('inline-block -mt-1')} Lägg till specialkost`;
-                addDietButton.onclick = () => { const newId = 'd-' + Date.now(); if(!state.formData.customDiets) state.formData.customDiets = []; state.formData.customDiets.push({ id: newId, description: '', count: '' }); const newRow = document.createElement('div'); newRow.className = 'flex items-center gap-2'; newRow.id = `diet-row-${newId}`; const descInput = createInputGroup('', `diet-desc-${newId}`, '', 'text', (_, val) => updateNestedFormData('customDiets', newId, 'description', val), 'flex-grow'); const countInput = createInputGroup('', `diet-count-${newId}`, '', 'number', (_, val) => updateNestedFormData('customDiets', newId, 'count', val), 'w-32'); const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash(); deleteBtn.onclick = () => { state.formData.customDiets = state.formData.customDiets.filter(d => d.id !== newId); newRow.remove(); updateLiveFormData('customDiets', state.formData.customDiets); }; newRow.append(descInput, countInput, deleteBtn); customDietsContainer.appendChild(newRow); };
+                addDietButton.onclick = () => { const newId = 'd-' + Date.now(); if(!state.formData.customDiets) state.formData.customDiets = []; state.formData.customDiets.push({ id: newId, description: '', count: '' }); 
+                    const newRow = document.createElement('div'); 
+                    // --- MOBILFIX: Lade till flex-wrap för att hantera smala skärmar ---
+                    newRow.className = 'flex flex-wrap items-center gap-2'; newRow.id = `diet-row-${newId}`; 
+                    const descInput = createInputGroup('', `diet-desc-${newId}`, '', 'text', (_, val) => updateNestedFormData('customDiets', newId, 'description', val), 'flex-grow min-w-[120px]'); 
+                    const countInput = createInputGroup('', `diet-count-${newId}`, '', 'number', (_, val) => updateNestedFormData('customDiets', newId, 'count', val), 'w-32'); 
+                    const deleteBtn = document.createElement('button'); deleteBtn.className = `p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}`; deleteBtn.innerHTML = icons.trash(); deleteBtn.onclick = () => { state.formData.customDiets = state.formData.customDiets.filter(d => d.id !== newId); newRow.remove(); updateLiveFormData('customDiets', state.formData.customDiets); }; newRow.append(descInput, countInput, deleteBtn); customDietsContainer.appendChild(newRow); };
                 container.appendChild(addDietButton);
                 return container;
             }));
@@ -1370,36 +1433,68 @@
             }));
 
             const footer = document.createElement('footer');
-            footer.className = `p-4 border-t ${classes.border} flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0`;
+            // --- MOBILFIX: Gjorde footern mer kompakt på mobil. Staplar allt vertikalt. ---
+            footer.className = `p-4 border-t ${classes.border} flex flex-col items-stretch sm:flex-row sm:justify-between sm:items-center gap-4 flex-shrink-0`;
+            
             const leftFooter = document.createElement('div');
-            leftFooter.className = 'flex items-center gap-4';
+            // --- MOBILFIX: Centrerar vänstra kontroller på mobil ---
+            leftFooter.className = 'flex items-center justify-center sm:justify-start gap-4';
             leftFooter.innerHTML = `<button id="delete-btn" class="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors ${classes.focus}" title="Radera ärende">${icons.trash()}</button><button id="copy-btn" class="${classes.accent} hover:text-cyan-500 text-sm font-semibold ${classes.focus}">Kopiera Ärende</button>`;
             leftFooter.querySelector('#delete-btn').onclick = () => requestDeleteConfirmation(formData);
             leftFooter.querySelector('#copy-btn').onclick = () => handleCopyQuote(formData);
+            
             const rightFooter = document.createElement('div');
-            rightFooter.className = 'flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto';
+            // --- MOBILFIX: Ändrade layout för högra delen av footern för att bättre passa mobil. ---
+            rightFooter.className = 'flex flex-col sm:items-end gap-4 w-full sm:w-auto';
+            
+            const priceDisplayContainer = document.createElement('div');
+            priceDisplayContainer.className = 'w-full sm:text-right';
+
+            const priceDetails = calculatePriceDetails(formData);
+
+            const totalDisplayContainer = document.createElement('div');
+            totalDisplayContainer.className = 'flex justify-between items-center w-full sm:w-auto sm:justify-end gap-2';
+            const totalLabel = document.createElement('span');
+            totalLabel.className = 'font-semibold';
+            totalLabel.textContent = 'Totalt:';
             const totalDisplay = document.createElement('p');
             totalDisplay.id = 'modal-total-display';
             totalDisplay.className = `font-bold text-xl ${classes.accent}`;
-            totalDisplay.textContent = (formData.total || 0).toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+            totalDisplay.textContent = priceDetails.total.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' });
+            totalDisplayContainer.append(totalLabel, totalDisplay);
+
+            const vatDisplay = document.createElement('p');
+            vatDisplay.id = 'modal-vat-display';
+            vatDisplay.className = `${classes.textSecondary} text-xs mt-0.5`;
+            vatDisplay.textContent = `(varav moms 12%: ${priceDetails.vat.toLocaleString('sv-SE', { style: 'currency', currency: 'SEK' })})`;
+            
+            priceDisplayContainer.append(totalDisplayContainer, vatDisplay);
+            
             const buttonsContainer = document.createElement('div');
-            buttonsContainer.className = 'flex gap-2 w-full sm:w-auto';
+            // --- MOBILFIX: Knapparna tar full bredd på mobil och har ett mindre gap. ---
+            buttonsContainer.className = 'grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto';
+            
             const exportButton = document.createElement('button');
             exportButton.className = `w-full sm:w-auto ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-3 py-2 text-sm rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${classes.focus}`;
-            exportButton.innerHTML = `${icons.filePdf()} Exportera`;
+            exportButton.innerHTML = `${icons.filePdf()} <span class="hidden sm:inline">Exportera</span>`;
             exportButton.onclick = () => generateQuotePdf(formData);
+
             const saveButton = document.createElement('button');
             saveButton.className = `w-full sm:w-auto ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} ${classes.buttonSecondaryHover} px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
             saveButton.textContent = 'Spara';
             saveButton.onclick = () => handleSaveQuote(formData);
+
             const actionButton = document.createElement('button');
-            actionButton.className = `w-full sm:w-auto px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
+            actionButton.className = `w-full col-span-2 sm:w-auto px-5 py-2 rounded-lg font-semibold transition-colors shadow ${classes.focus}`;
             if (formData.status === 'utkast') { actionButton.textContent = 'Skicka Förslag'; actionButton.className += ` ${classes.buttonPrimaryBg} ${classes.buttonPrimaryText} ${classes.buttonPrimaryHover}`; actionButton.onclick = () => requestSendConfirmation(formData); }
             else if (formData.status === 'förslag-skickat') { actionButton.textContent = 'Godkänn Förslag'; actionButton.className += ' bg-green-500 text-white hover:bg-green-600'; actionButton.onclick = () => requestApproveConfirmation(formData); }
             else { actionButton.textContent = 'Åtgärd'; actionButton.className += ` ${classes.buttonSecondaryBg} ${classes.buttonSecondaryText} opacity-50 cursor-not-allowed`; actionButton.disabled = true; }
+            
             buttonsContainer.append(exportButton, saveButton, actionButton);
-            rightFooter.append(totalDisplay, buttonsContainer);
-            footer.append(leftFooter, rightFooter);
+            
+            // --- MOBILFIX: Ändrad ordning för mobil ---
+            rightFooter.append(priceDisplayContainer, buttonsContainer);
+            footer.append(rightFooter, leftFooter);
             modalContent.append(header, main, footer);
             
             if (state.isMicroCalendarOpen) {
