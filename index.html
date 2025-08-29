@@ -271,6 +271,33 @@
             const recordId = getValue(['recordId', 'recordID']);
             const eventDateRaw = getValue(['eventDate', 'eventDatum']);
 
+            // --- ATOMSMED FIX: Hybrid Diet Logic ---
+            // First, try to parse the consolidated JSON field for backward compatibility.
+            let standardDiets = safeJsonParse(getValue(['standardDiets', 'standardSpecialkost']), {});
+
+            // If the JSON field is empty, build the object from individual Airtable fields.
+            // This makes the frontend resilient to different data structures from the backend.
+            if (Object.keys(standardDiets).length === 0) {
+                const dietsMap = {
+                    vegetarian: { has: ['hasVegetarian', 'Has Vegetarian'], num: ['numVegetarian', 'Num Vegetarian'] },
+                    vegan: { has: ['hasVegan', 'Has Vegan'], num: ['numVegan', 'Num Vegan'] },
+                    glutenFree: { has: ['hasGlutenFree', 'Has Gluten Free'], num: ['numGlutenFree', 'Num Gluten Free'] },
+                    lactoseFree: { has: ['hasLactoseFree', 'Has Lactose Free'], num: ['numLactoseFree', 'Num Lactose Free'] },
+                    nutAllergy: { has: ['hasNutAllergy', 'Has Nut Allergy'], num: ['numNutAllergy', 'Num Nut Allergy'] }
+                };
+
+                for (const [key, fieldKeys] of Object.entries(dietsMap)) {
+                    // Airtable checkboxes can be true/false or undefined. `getValue` handles this.
+                    const hasDiet = getValue(fieldKeys.has);
+                    if (hasDiet) { 
+                        standardDiets[key] = {
+                            selected: true,
+                            count: Number(getValue(fieldKeys.num, 0))
+                        };
+                    }
+                }
+            }
+
             const quoteObject = {
                 id: getValue(['offertId', 'OffertID', 'id'], `GK-${Date.now()}`),
                 recordId: recordId,
@@ -281,24 +308,24 @@
                 customerIdNumber: getValue(['customerIdNumber', 'personnummer']),
                 contactEmail: getValue(['contactEmail', 'email']),
                 contactPhone: getValue(['contactPhone', 'telefon']),
-                address: getValue(['address', 'adress']),
+                address: getValue(['address', 'adress', 'eventLocation', 'Event Location']),
                 guestCount: Number(getValue(['guestCount', 'antalGaster'], 0)),
                 eventDate: eventDateRaw ? new Date(eventDateRaw).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
                 eventStartTime: getValue(['eventStartTime', 'starttid'], "17:00"),
                 eventEndTime: getValue(['eventEndTime', 'sluttid'], "01:00"),
                 pricePerGuest: Number(getValue(['pricePerGuest', 'prisPerKuvert'], 0)),
                 menuDescription: getValue(['menuDescription', 'meny', 'menuPreference']),
-                customerRequests: getValue(['customerRequests', 'kundensOnskemal']),
-                numChefs: Number(getValue(['numChefs', 'antalKockar'], 0)),
-                chefCost: Number(getValue(['chefCost', 'kostnadKockar'], 0)),
-                numServingStaff: Number(getValue(['numServingStaff', 'antalServering'], 0)),
-                servingStaffCost: Number(getValue(['servingStaffCost', 'kostnadServering'], 0)),
+                customerRequests: getValue(['customerRequests', 'kundensOnskemal', 'otherRequests', 'Other Requests Summary', 'kundens önskemål']),
+                numChefs: Number(getValue(['numChefs', 'antalKockar', 'Num Chefs'], 0)),
+                chefCost: Number(getValue(['chefCost', 'kostnadKockar', 'Chef Cost'], 0)),
+                numServingStaff: Number(getValue(['numServingStaff', 'antalServering', 'Num Serving Staff'], 0)),
+                servingStaffCost: Number(getValue(['servingStaffCost', 'kostnadServering', 'Serving Staff Cost'], 0)),
                 discountAmount: Number(getValue(['discountAmount', 'rabatt'], 0)),
-                customCosts: safeJsonParse(getValue(['customCosts', 'extraKostnader']), []),
-                standardDiets: safeJsonParse(getValue(['standardDiets', 'standardSpecialkost']), {}),
-                customDiets: safeJsonParse(getValue(['customDiets', 'ovrigSpecialkost']), []),
+                customCosts: safeJsonParse(getValue(['customCosts', 'extraKostnader', 'Custom Costs JSON']), []),
+                standardDiets: standardDiets,
+                customDiets: safeJsonParse(getValue(['customDiets', 'ovrigSpecialkost', 'Custom Diets']), []),
                 events: safeJsonParse(getValue(['events', 'handelselogg']), [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
-                internalComment: getValue(['internalComment', 'internaNoteringar']),
+                internalComment: getValue(['internalComment', 'internaNoteringar', 'Internal Comment', 'interna noteringar']),
                 sentDate: getValue(['sentDate']) ? formatDate(getValue(['sentDate'])) : null,
                 aiRawLog: getValue(['aiRawLog']),
             };
@@ -1531,3 +1558,4 @@
     </script>
 </body>
 </html>
+
