@@ -269,6 +269,10 @@
             };
 
             const recordId = getValue(['recordId', 'recordID']);
+            
+            // --- DEBUG LOG 1: Check what is being received from the GET_QUOTES API ---
+            console.log(`FROM N8N GET: offertId "${getValue(['offertId', 'id'])}" -> recordId:`, recordId);
+
             const eventDateRaw = getValue(['eventDate', 'eventDatum']);
 
             // --- ATOMSMED FIX: Hybrid Diet Logic ---
@@ -368,6 +372,10 @@
                 customDiets: portalQuote.customDiets || [],
                 events: portalQuote.events || [],
             };
+
+            // --- DEBUG LOG 2: Check what is being sent in the SAVE_QUOTE payload ---
+            console.log(`SENDING TO N8N: offertId "${payload.offertId}" -> recordId:`, payload.recordId);
+
             return payload;
         }
 
@@ -1653,4 +1661,5 @@
     </script>
 </body>
 </html>
+
 
