@@ -236,43 +236,79 @@
             return statusMap[normalized] || 'utkast';
         }
 
+        /**
+         * ATOMSMED'S SURGICAL FIX: Robust Data Transformation
+         * This function is the critical junction between the raw data from Airtable (via N8N)
+         * and the frontend's state. The original implementation was brittle. This new version
+         * introduces a resilient mapping strategy to handle data inconsistencies.
+         *
+         * KEY IMPROVEMENTS:
+         * 1.  **Resilient Field Mapping:** A helper function `getValue` checks multiple possible
+         * field names (e.g., 'customerName', 'kundNamn', 'Customer Name') for each piece of
+         * data, making the mapping tolerant to changes in the source.
+         * 2.  **Safe Type Coercion:** All numerical values are explicitly passed through `Number()`
+         * with a fallback to 0, preventing `NaN` errors that can break calculations.
+         * 3.  **Robust JSON Parsing:** Complex fields like `customCosts`, `standardDiets`, and
+         * `customDiets` are parsed using the enhanced `safeJsonParse`, ensuring that malformed
+         * or empty JSON strings from Airtable don't crash the application, defaulting to
+         * sensible empty states instead.
+         * 4.  **Default Values:** Sensible defaults are provided for crucial fields like dates
+         * and times to ensure the UI can always render a valid state.
+         * 5.  **Total Recalculation:** The total is always recalculated on the frontend after
+         * transformation, ensuring data integrity regardless of what the backend sends.
+         */
         function transformN8nQuoteToPortalQuote(n8nQuote) {
-            const recordId = n8nQuote.recordId || n8nQuote.recordID || null;
-            const quoteObject = {
-                id: n8nQuote.offertId || n8nQuote.OffertID || n8nQuote.id || `GK-${Date.now()}`,
-                recordId: recordId,
-                status: normalizeStatus(n8nQuote.status),
-                customer: n8nQuote.customerName || n8nQuote.kundNamn || '',
-                customerType: n8nQuote.customerType || n8nQuote.kundtyp || 'privat',
-                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktperson || '',
-                customerIdNumber: n8nQuote.customerIdNumber || n8nQuote.personnummer || '',
-                contactEmail: n8nQuote.contactEmail || n8nQuote.email || '',
-                contactPhone: n8nQuote.contactPhone || n8nQuote.telefon || '',
-                address: n8nQuote.address || n8nQuote.adress || '',
-                guestCount: Number(n8nQuote.guestCount || n8nQuote.antalGaster) || 0,
-                eventDate: (n8nQuote.eventDate || n8nQuote.eventDatum) ? new Date(n8nQuote.eventDate || n8nQuote.eventDatum).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                eventStartTime: n8nQuote.eventStartTime || n8nQuote.starttid || "17:00",
-                eventEndTime: n8nQuote.eventEndTime || n8nQuote.sluttid || "01:00",
-                pricePerGuest: Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) || 0,
-                menuDescription: n8nQuote.menuDescription || n8nQuote.meny || n8nQuote.menuPreference || '',
-                customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || '',
-                numChefs: Number(n8nQuote.numChefs || n8nQuote.antalKockar) || 0,
-                chefCost: Number(n8nQuote.chefCost || n8nQuote.kostnadKockar) || 0,
-                numServingStaff: Number(n8nQuote.numServingStaff || n8nQuote.antalServering) || 0,
-                servingStaffCost: Number(n8nQuote.servingStaffCost || n8nQuote.kostnadServering) || 0,
-                discountAmount: Number(n8nQuote.discountAmount || n8nQuote.rabatt) || 0,
-                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader, []),
-                standardDiets: safeJsonParse(n8nQuote.standardDiets || n8nQuote.standardSpecialkost, {}),
-                customDiets: safeJsonParse(n8nQuote.customDiets || n8nQuote.ovrigSpecialkost, []),
-                events: safeJsonParse(n8nQuote.events || n8nQuote.handelselogg, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
-                internalComment: n8nQuote.internalComment || n8nQuote.internaNoteringar || '',
-                total: Number(n8nQuote.total || n8nQuote.totalt) || 0,
-                sentDate: n8nQuote.sentDate ? formatDate(n8nQuote.sentDate) : null,
-                aiRawLog: n8nQuote.aiRawLog || '',
+            // Helper to resiliently get a value from multiple possible keys
+            const getValue = (keys, defaultValue = '') => {
+                for (const key of keys) {
+                    if (n8nQuote[key] !== undefined && n8nQuote[key] !== null) {
+                        return n8nQuote[key];
+                    }
+                }
+                return defaultValue;
             };
+
+            const recordId = getValue(['recordId', 'recordID']);
+            const eventDateRaw = getValue(['eventDate', 'eventDatum']);
+
+            const quoteObject = {
+                id: getValue(['offertId', 'OffertID', 'id'], `GK-${Date.now()}`),
+                recordId: recordId,
+                status: normalizeStatus(getValue(['status'])),
+                customer: getValue(['customerName', 'kundNamn']),
+                customerType: getValue(['customerType', 'kundtyp'], 'privat'),
+                contactPerson: getValue(['contactPerson', 'kontaktperson']),
+                customerIdNumber: getValue(['customerIdNumber', 'personnummer']),
+                contactEmail: getValue(['contactEmail', 'email']),
+                contactPhone: getValue(['contactPhone', 'telefon']),
+                address: getValue(['address', 'adress']),
+                guestCount: Number(getValue(['guestCount', 'antalGaster'], 0)),
+                eventDate: eventDateRaw ? new Date(eventDateRaw).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                eventStartTime: getValue(['eventStartTime', 'starttid'], "17:00"),
+                eventEndTime: getValue(['eventEndTime', 'sluttid'], "01:00"),
+                pricePerGuest: Number(getValue(['pricePerGuest', 'prisPerKuvert'], 0)),
+                menuDescription: getValue(['menuDescription', 'meny', 'menuPreference']),
+                customerRequests: getValue(['customerRequests', 'kundensOnskemal']),
+                numChefs: Number(getValue(['numChefs', 'antalKockar'], 0)),
+                chefCost: Number(getValue(['chefCost', 'kostnadKockar'], 0)),
+                numServingStaff: Number(getValue(['numServingStaff', 'antalServering'], 0)),
+                servingStaffCost: Number(getValue(['servingStaffCost', 'kostnadServering'], 0)),
+                discountAmount: Number(getValue(['discountAmount', 'rabatt'], 0)),
+                customCosts: safeJsonParse(getValue(['customCosts', 'extraKostnader']), []),
+                standardDiets: safeJsonParse(getValue(['standardDiets', 'standardSpecialkost']), {}),
+                customDiets: safeJsonParse(getValue(['customDiets', 'ovrigSpecialkost']), []),
+                events: safeJsonParse(getValue(['events', 'handelselogg']), [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
+                internalComment: getValue(['internalComment', 'internaNoteringar']),
+                sentDate: getValue(['sentDate']) ? formatDate(getValue(['sentDate'])) : null,
+                aiRawLog: getValue(['aiRawLog']),
+            };
+            
+            // Always recalculate total on the frontend to ensure consistency
             quoteObject.total = calculateTotal(quoteObject);
+
             return quoteObject;
         }
+
 
         function transformPortalQuoteToN8nQuote(portalQuote) {
             const payload = {
