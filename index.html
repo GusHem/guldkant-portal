@@ -57,6 +57,7 @@
 
         const N8N_BASE_URL = 'https://nordsym.app.n8n.cloud/webhook/';
         const N8N_ENDPOINTS = { SAVE_QUOTE: 'guldkant-offer-intake-v2', GET_QUOTES: 'quotes', SEND_PROPOSAL: 'quote/dispatch' };
+        
         class DataService {
             async _post(endpoint, data) {
                 try {
@@ -81,93 +82,111 @@
             async saveQuote(d) { return this._post(N8N_ENDPOINTS.SAVE_QUOTE, transformPortalQuoteToN8nQuote(d)); }
             async sendProposal(d) { return this._post(N8N_ENDPOINTS.SEND_PROPOSAL, transformPortalQuoteToN8nQuote(d)); }
         }
-        const safeJsonParse = (j, d) => { if (typeof j === 'object' && j !== null) return j; try { const parsed = JSON.parse(j); return parsed === null ? d : parsed; } catch { return d; } };
         
-        const normalizeStatus = s => {
-            if (!s) return 'utkast';
-            const lower = s.toLowerCase().trim();
-            if (lower === 'accepterad') return 'godkänd';
-            return lower.replace(/\s+/g, '-').replace('förlorad-affär', 'förlorad');
-        };
-        
-        function transformN8nQuoteToPortalQuote(n8n) {
-            const getValue = (keys, def = '') => keys.reduce((acc, key) => acc ?? n8n[key], null) ?? def;
-
-            const standardDiets = {};
-            if (getValue(['hasVegetarian']) && getValue(['numVegetarian'])) standardDiets.vegetarian = getValue(['numVegetarian']);
-            if (getValue(['hasVegan']) && getValue(['numVegan'])) standardDiets.vegan = getValue(['numVegan']);
-            if (getValue(['hasGlutenFree']) && getValue(['numGlutenFree'])) standardDiets.gluten = getValue(['numGlutenFree']);
-            if (getValue(['hasLactoseFree']) && getValue(['numLactoseFree'])) standardDiets.laktos = getValue(['numLactoseFree']);
-            if (getValue(['hasNutAllergy']) && getValue(['numNutAllergy'])) standardDiets.notallergi = getValue(['numNutAllergy']);
-
-            const quote = {
-                id: getValue(['id', 'offertId'], `GK-${Date.now()}`),
-                recordId: getValue(['recordId', 'rawId']),
-                status: normalizeStatus(getValue(['status'], 'utkast')),
-                customer: getValue(['kundNamn', 'customerName']),
-                contactPerson: getValue(['kontaktPerson', 'contactPerson']),
-                contactEmail: getValue(['email', 'contactEmail']),
-                contactPhone: getValue(['telefon', 'contactPhone']),
-                address: getValue(['eventPlats', 'address']),
-                guestCount: Number(getValue(['guestCount'], 0)),
-                eventDate: getValue(['eventDatum', 'eventDate'], new Date().toISOString().split('T')[0]),
-                eventStartTime: getValue(['eventTid', 'eventStartTime'], "17:00"),
-                eventEndTime: getValue(['eventEndTime'], "01:00"),
-                pricePerGuest: Number(getValue(['pricePerGuest'], 0)),
-                menuDescription: getValue(['menuPreference', 'menuDescription']),
-                customerRequests: getValue(['otherRequests', 'customerRequests']),
-                chefCost: Number(getValue(['chefCost'], 0)),
-                servingStaffCost: Number(getValue(['servingStaffCost'], 0)),
-                discountAmount: Number(getValue(['discountAmount'], 0)),
-                customCosts: safeJsonParse(getValue(['customCostsJSON', 'customCosts']), []),
-                standardDiets: standardDiets,
-                customDiets: safeJsonParse(getValue(['customDiets']), []),
-                internalComment: getValue(['internalComment']),
-            };
-            quote.total = calculateTotal(quote);
-            return quote;
+        function safeJsonParse(jsonString, defaultValue) {
+            if (!jsonString) return defaultValue;
+            if (typeof jsonString === 'object') return jsonString;
+            if (typeof jsonString !== 'string' || !jsonString.trim()) return defaultValue;
+            try {
+                const parsed = JSON.parse(jsonString);
+                return parsed !== null ? parsed : defaultValue;
+            } catch (e) {
+                console.warn("JSON Parse Warning:", jsonString, e);
+                return defaultValue;
+            }
         }
 
-        function transformPortalQuoteToN8nQuote(p) {
-            const dietData = {
-                hasVegetarian: !!p.standardDiets?.vegetarian,
-                numVegetarian: p.standardDiets?.vegetarian || 0,
-                hasVegan: !!p.standardDiets?.vegan,
-                numVegan: p.standardDiets?.vegan || 0,
-                hasGlutenFree: !!p.standardDiets?.gluten,
-                numGlutenFree: p.standardDiets?.gluten || 0,
-                hasLactoseFree: !!p.standardDiets?.laktos,
-                numLactoseFree: p.standardDiets?.laktos || 0,
-                hasNutAllergy: !!p.standardDiets?.notallergi,
-                numNutAllergy: p.standardDiets?.notallergi || 0,
+        function normalizeStatus(statusString) {
+            if (!statusString || typeof statusString !== 'string') return 'utkast';
+            const normalized = statusString.toLowerCase().trim().replace(/\s+/g, '-');
+            const statusMap = {
+                'förslag-skickat': 'förslag-skickat',
+                'godkänd': 'godkänd',
+                'accepterad': 'godkänd',
+                'genomförd': 'genomförd',
+                'betald': 'betald',
+                'förlorad': 'förlorad',
+                'förlorad-affär': 'förlorad',
+                'arkiverad': 'arkiverad',
+                'utkast': 'utkast'
             };
-
-            return {
-                recordId: p.recordId,
-                id: p.id,
-                status: p.status,
-                kundNamn: p.customer,
-                kontaktPerson: p.contactPerson,
-                email: p.contactEmail,
-                telefon: p.contactPhone,
-                eventPlats: p.address,
-                guestCount: Number(p.guestCount) || 0,
-                eventDatum: p.eventDate,
-                eventTid: p.eventStartTime,
-                eventEndTime: p.eventEndTime,
-                pricePerGuest: Number(p.pricePerGuest) || 0,
-                menuPreference: p.menuDescription,
-                otherRequests: p.customerRequests,
-                chefCost: Number(p.chefCost) || 0,
-                servingStaffCost: Number(p.servingStaffCost) || 0,
-                discountAmount: Number(p.discountAmount) || 0,
-                totalPris: Number(p.total) || 0,
-                internalComment: p.internalComment,
-                customCostsJSON: p.customCosts || [],
-                customDiets: p.customDiets || [],
-                ...dietData,
-            };
+            return statusMap[normalized] || 'utkast';
         }
+
+        function transformN8nQuoteToPortalQuote(n8nQuote) {
+            const recordId = n8nQuote.recordId || n8nQuote.recordID || null;
+            const quoteObject = {
+                id: n8nQuote.offertId || n8nQuote.OffertID || n8nQuote.id || `GK-${Date.now()}`,
+                recordId: recordId,
+                status: normalizeStatus(n8nQuote.status),
+                customer: n8nQuote.customerName || n8nQuote.kundNamn || '',
+                customerType: n8nQuote.customerType || n8nQuote.kundtyp || 'privat',
+                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktperson || '',
+                customerIdNumber: n8nQuote.customerIdNumber || n8nQuote.personnummer || '',
+                contactEmail: n8nQuote.contactEmail || n8nQuote.email || '',
+                contactPhone: n8nQuote.contactPhone || n8nQuote.telefon || '',
+                address: n8nQuote.address || n8nQuote.adress || '',
+                guestCount: Number(n8nQuote.guestCount || n8nQuote.antalGaster) || 0,
+                eventDate: (n8nQuote.eventDate || n8nQuote.eventDatum) ? new Date(n8nQuote.eventDate || n8nQuote.eventDatum).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                eventStartTime: n8nQuote.eventStartTime || n8nQuote.starttid || "17:00",
+                eventEndTime: n8nQuote.eventEndTime || n8nQuote.sluttid || "01:00",
+                pricePerGuest: Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) || 0,
+                menuDescription: n8nQuote.menuDescription || n8nQuote.meny || n8nQuote.menuPreference || '',
+                customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || '',
+                numChefs: Number(n8nQuote.numChefs || n8nQuote.antalKockar) || 0,
+                chefCost: Number(n8nQuote.chefCost || n8nQuote.kostnadKockar) || 0,
+                numServingStaff: Number(n8nQuote.numServingStaff || n8nQuote.antalServering) || 0,
+                servingStaffCost: Number(n8nQuote.servingStaffCost || n8nQuote.kostnadServering) || 0,
+                discountAmount: Number(n8nQuote.discountAmount || n8nQuote.rabatt) || 0,
+                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader, []),
+                standardDiets: safeJsonParse(n8nQuote.standardDiets || n8nQuote.standardSpecialkost, {}),
+                customDiets: safeJsonParse(n8nQuote.customDiets || n8nQuote.ovrigSpecialkost, []),
+                events: safeJsonParse(n8nQuote.events || n8nQuote.handelselogg, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
+                internalComment: n8nQuote.internalComment || n8nQuote.internaNoteringar || '',
+                total: Number(n8nQuote.total || n8nQuote.totalt) || 0,
+                sentDate: n8nQuote.sentDate ? new Date(n8nQuote.sentDate).toLocaleDateString('sv-SE') : null,
+                aiRawLog: n8nQuote.aiRawLog || '',
+            };
+            if (!quoteObject.total) {
+                quoteObject.total = calculateTotal(quoteObject);
+            }
+            return quoteObject;
+        }
+
+        function transformPortalQuoteToN8nQuote(portalQuote) {
+            const payload = {
+                recordId: portalQuote.recordId,
+                offertId: portalQuote.id,
+                status: portalQuote.status,
+                customerName: portalQuote.customer,
+                customerType: portalQuote.customerType,
+                contactPerson: portalQuote.contactPerson,
+                customerIdNumber: portalQuote.customerIdNumber,
+                contactEmail: portalQuote.contactEmail,
+                contactPhone: portalQuote.contactPhone,
+                address: portalQuote.address,
+                guestCount: Number(portalQuote.guestCount) || 0,
+                eventDate: portalQuote.eventDate,
+                eventStartTime: portalQuote.eventStartTime,
+                eventEndTime: portalQuote.eventEndTime,
+                pricePerGuest: Number(portalQuote.pricePerGuest) || 0,
+                menuDescription: portalQuote.menuDescription,
+                customerRequests: portalQuote.customerRequests,
+                numChefs: Number(portalQuote.numChefs) || 0,
+                chefCost: Number(portalQuote.chefCost) || 0,
+                numServingStaff: Number(portalQuote.numServingStaff) || 0,
+                servingStaffCost: Number(portalQuote.servingStaffCost) || 0,
+                discountAmount: Number(portalQuote.discountAmount) || 0,
+                total: Number(portalQuote.total) || 0,
+                internalComment: portalQuote.internalComment,
+                customCosts: portalQuote.customCosts || [],
+                standardDiets: portalQuote.standardDiets || {},
+                customDiets: portalQuote.customDiets || [],
+                events: portalQuote.events || [],
+            };
+            return payload;
+        }
+
         const dataService = new DataService();
         
         const themes = { 
@@ -325,7 +344,7 @@
              doc.autoTable({ 
                 startY: 185,
                 head: [['Beskrivning', 'Detalj', 'Pris']], body: tableRows, theme: 'plain', 
-                headStyles: { fontStyle: 'bold' }, 
+                headStyles: { fontStyle: 'bold', textColor: [0,0,0] }, 
                 columnStyles: { 0: {cellWidth: 100}, 1: {halign: 'right'}, 2: { halign: 'right' } } 
             });
 
@@ -357,7 +376,7 @@
             return createElement('div', { className: `fixed inset-0 z-50 ${theme.modalOverlay} flex items-center justify-center p-4 animate-fade-in-fast` },
                 createElement('div', { className: `${theme.cardBg} rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center animate-fade-in-scale`},
                     createElement('h2', { className: 'text-lg font-bold mb-2' }, 'Skicka förslag till kund?'),
-                    createElement('p', { className: `${theme.textSecondary} mb-6`}, 'En offert kommer att skickas via e-post till kunden. Är du säker på att du vill fortsätta?'),
+                    createElement('p', { className: `${theme.textSecondary} mb-6`}, 'Ett e-postmeddelande med förslaget kommer att skickas till kunden. Är du säker på att du vill fortsätta?'),
                     createElement('div', { className: 'flex justify-center gap-4' },
                         createElement('button', { className: `px-6 py-2 font-semibold rounded-lg ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover}`, onclick: () => setState({ isConfirmModalOpen: false, quoteToSend: null })}, 'Avbryt'),
                         createElement('button', { className: `px-6 py-2 font-semibold rounded-lg ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover}`, onclick: () => handleSendProposal(state.quoteToSend) }, 'Ja, skicka')
@@ -464,19 +483,20 @@
             const statusButton = createElement('button', { className: `flex items-center gap-2 px-4 py-3 font-semibold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg whitespace-nowrap`, 
                 onclick: (e) => {
                     e.stopPropagation();
-                    const menu = statusDropdownContainer.querySelector('.status-menu');
+                    const menu = document.getElementById('global-filter-status-menu');
                     if (menu) {
                         menu.remove();
                     } else {
+                         const targetRect = e.currentTarget.getBoundingClientRect();
                          const statuses = ['alla', 'prioriterade', 'aktiva', 'kommande', ...Object.keys(statusTextMap)];
-                         const newMenu = createElement('div', { className: `status-menu absolute top-full mt-2 w-48 ${theme.cardBg} rounded-lg shadow-lg border ${theme.border} z-30 animate-fade-in-fast` });
+                         const newMenu = createElement('div', { id: 'global-filter-status-menu', className: `fixed w-48 ${theme.cardBg} rounded-lg shadow-lg border ${theme.border} z-30 animate-fade-in-fast`, style: { top: `${targetRect.bottom + 5}px`, left: `${targetRect.left}px`} });
                          [...new Set(statuses)].forEach(status => {
                              newMenu.append(createElement('a', { className: 'block px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer', onclick: () => {
                                  setState({ filter: status, displayLimit: 12 });
                                  newMenu.remove();
                             } }, t(`filter.${status}`) || statusTextMap[status]));
                          });
-                         statusDropdownContainer.append(newMenu);
+                         document.body.append(newMenu);
                     }
                 } 
             }, t(`filter.${state.filter}`) || statusTextMap[state.filter] || 'Status', createElement('div', {innerHTML: icons.arrowDown('w-4 h-4')}));
@@ -831,9 +851,9 @@
             };
 
             const formWrapper = createElement('div', { className: 'flex-grow overflow-y-auto p-4 md:p-6 space-y-6' },
-                createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal gäster', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
+                createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('customerType', 'Kundtyp'), createField('customerIdNumber', 'Org/Personnummer'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal gäster', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
                 createSection('Meny & Pris', 'menu', [ createField('pricePerGuest', 'Pris per kuvert (exkl. moms)', 'number'), createTextarea('menuDescription', 'Menybeskrivning'), createTextarea('customerRequests', 'Kundens önskemål') ]),
-                createSection('Personal & Kostnader', 'costs', [ createField('chefCost', 'Kostnad kockar', 'number'), createField('servingStaffCost', 'Kostnad servering', 'number'), createField('discountAmount', 'Rabatt', 'number', true) ]),
+                createSection('Personal & Kostnader', 'costs', [ createField('numChefs', 'Antal Kockar', 'number'), createField('chefCost', 'Kostnad kockar', 'number'), createField('numServingStaff', 'Antal Servering', 'number'), createField('servingStaffCost', 'Kostnad servering', 'number'), createField('discountAmount', 'Rabatt', 'number', true) ]),
                 customCostsSection(),
                 dietSection(),
                 createSection('Interna Noteringar', 'internal', [ createTextarea('internalComment', 'Interna noteringar') ])
@@ -842,7 +862,7 @@
             const { subTotal, vat, total } = calculatePriceDetails(q);
             const footer = createElement('footer', {className: `flex-shrink-0 p-4 border-t ${theme.border}`});
             footer.append(createElement('div', {className:'flex justify-end text-sm gap-4 mb-3'}, createElement('span', {id:'modal-subtotal'}, `Summa: ${subTotal.toLocaleString('sv-SE')} kr`), createElement('span', {id:'modal-vat'}, `Moms: ${vat.toLocaleString('sv-SE')} kr`)));
-            footer.append(createElement('div', {className:'flex justify-between items-center'}, createElement('div',{id:'modal-total', className:'text-2xl font-bold'}, `Totalt: ${total.toLocaleString('sv-se')} kr`), createElement('div', {className:'flex items-center gap-3'}, createElement('button',{className:`px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); closeModal()}}, 'Spara'), createElement('button',{className:`px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag'))));
+            footer.append(createElement('div', {className:'flex justify-between items-center'}, createElement('div',{id:'modal-total', className:'text-2xl font-bold'}, `Totalt: ${total.toLocaleString('sv-SE')} kr`), createElement('div', {className:'flex items-center gap-3'}, createElement('button',{className:`px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); closeModal()}}, 'Spara'), createElement('button',{className:`px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag'))));
             
             modalContent.append(header, formWrapper, footer);
             modalPositioner.append(modalContent);
@@ -870,7 +890,7 @@
         
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.relative')) {
-                 const globalMenu = document.getElementById('global-card-status-menu');
+                 const globalMenu = document.getElementById('global-card-status-menu') || document.getElementById('global-filter-status-menu');
                  if(globalMenu) globalMenu.remove();
                  if (state.openCardMenu.id) {
                      setState({openCardMenu: {id: null, target: null}}, {render: false});
@@ -888,5 +908,4 @@
     </script>
 </body>
 </html>
-
 
