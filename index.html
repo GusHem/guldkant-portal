@@ -80,9 +80,9 @@
             }
             async getQuotes() { const r = await fetch(`${N8N_BASE_URL}${N8N_ENDPOINTS.GET_QUOTES}`); if (!r.ok) throw new Error('Network error'); return (await r.json()).quotes.map(transformN8nQuoteToPortalQuote); }
             async saveQuote(d) { return this._post(N8N_ENDPOINTS.SAVE_QUOTE, transformPortalQuoteToN8nQuote(d)); }
-            async sendProposal(d) { return this._post(N8N_ENDPOINTS.SEND_PROPOSAL, transformPortalQuoteToN8nQuote(d)); }
+            async sendProposal(payload) { return this._post(N8N_ENDPOINTS.SEND_PROPOSAL, payload); }
         }
-        
+
         function safeJsonParse(jsonString, defaultValue) {
             if (jsonString === null || jsonString === undefined) return defaultValue;
             if (typeof jsonString === 'object') return jsonString;
@@ -129,7 +129,7 @@
                 status: normalizeStatus(n8nQuote.status),
                 customer: n8nQuote.customerName || n8nQuote.kundNamn || '',
                 customerType: n8nQuote.customerType || n8nQuote.kundtyp || 'privat',
-                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktperson || n8nQuote.ContactPerson || '',
+                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktPerson || n8nQuote.ContactPerson || '',
                 customerIdNumber: n8nQuote.customerIdNumber || n8nQuote.personnummer || '',
                 contactEmail: n8nQuote.contactEmail || n8nQuote.email || '',
                 contactPhone: n8nQuote.contactPhone || n8nQuote.telefon || '',
@@ -238,9 +238,8 @@
 
         function showToast(message, type = 'success') { clearTimeout(toastTimer); setState({ toast: { id: Date.now(), message, type } }); toastTimer = setTimeout(() => setState({ toast: null }), 5000); }
         async function handleSaveQuote(quote, show=true) { 
-            const isNewQuote = !state.quotes.some(q => q.id === quote.id);
+            const isNewQuote = !quote.recordId;
             
-            // Optimistic UI update
             let optimisticQuotes;
             if (isNewQuote) {
                 optimisticQuotes = [...state.quotes, quote];
@@ -259,16 +258,22 @@
             } catch (e) { 
                 console.error(e); 
                 showToast('Sparning misslyckades.', 'error'); 
-                loadInitialData(); // Revert optimistic update on failure
+                loadInitialData();
             } 
         }
         async function handleSendProposal(quote) {
             setState({ isConfirmModalOpen: false, quoteToSend: null });
             const updatedQuote = { ...quote, status: 'förslag-skickat' };
+            
+            const payload = {
+                ...transformPortalQuoteToN8nQuote(updatedQuote),
+                action: 'dispatch'
+            };
+
             const optimisticQuotes = state.quotes.map(q => q.id === updatedQuote.id ? updatedQuote : q);
             setState({ quotes: optimisticQuotes, formData: null, selectedQuoteId: null });
             try { 
-                await dataService.sendProposal(updatedQuote); 
+                await dataService.sendProposal(payload); 
                 showToast(t('toast.proposal_sent', {id: quote.id})); 
             } catch (e) { 
                 console.error(e); 
