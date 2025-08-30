@@ -100,6 +100,7 @@
             if (!statusString || typeof statusString !== 'string') return 'utkast';
             const normalized = statusString.toLowerCase().trim().replace(/\s+/g, '-');
             const statusMap = {
+                'skickad': 'förslag-skickat',
                 'förslag-skickat': 'förslag-skickat',
                 'godkänd': 'godkänd',
                 'accepterad': 'godkänd',
@@ -838,9 +839,12 @@
                 const standardDiets = { vegetarian: 'Vegetarian', vegan: 'Vegan', gluten: 'Glutenfritt', laktos: 'Laktosfritt', notallergi: 'Nötallergi' };
                 Object.entries(standardDiets).forEach(([key, label]) => {
                     const count = q.standardDiets && q.standardDiets[key];
-                    const numberInput = createElement('input', {type:'number', min:'1', value: count || '1', onchange: e=>update('standardDiets',{...(q.standardDiets||{}), [key]:Number(e.target.value) || 1}), className:`w-20 p-2 rounded-lg border ${theme.border} ${theme.inputBg} ${!count ? 'hidden':''}`});
-                    const checkbox = createElement('input', {type:'checkbox', checked: !!count, onchange: e => {
-                        const currentDiets = state.formData.standardDiets || {};
+                    const isChecked = count !== undefined && count > 0;
+                    
+                    const numberInput = createElement('input', {type:'number', min:'1', value: count || '1', onchange: e=>update('standardDiets',{...(q.standardDiets||{}), [key]:Number(e.target.value) || 1}), className:`w-20 p-2 rounded-lg border ${theme.border} ${theme.inputBg} ${!isChecked ? 'hidden':''}`});
+                    
+                    const checkbox = createElement('input', {type:'checkbox', checked: isChecked, onchange: e => {
+                        const currentDiets = { ...state.formData.standardDiets };
                         if (e.target.checked) {
                             currentDiets[key] = count || 1;
                         } else {
@@ -848,6 +852,9 @@
                         }
                         update('standardDiets', currentDiets);
                         numberInput.classList.toggle('hidden', !e.target.checked);
+                        if (e.target.checked) {
+                            numberInput.value = '1';
+                        }
                     }, className:'h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500'});
                     content.append(createElement('div',{className:'flex items-center gap-4'}, checkbox, createElement('label',{className:'flex-grow'},label), numberInput));
                 });
