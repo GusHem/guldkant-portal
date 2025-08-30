@@ -106,6 +106,7 @@
                 'genomförd': 'genomförd',
                 'betald': 'betald',
                 'förlorad': 'förlorad',
+                'nekad': 'förlorad',
                 'förlorad-affär': 'förlorad',
                 'arkiverad': 'arkiverad',
                 'utkast': 'utkast'
@@ -485,13 +486,13 @@
             
             const widgetsContainer = createElement('div', { className: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 transition-all duration-500 ease-in-out overflow-hidden ${state.showWidgets ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'}` });
             if(state.showWidgets) {
-                const widgetIcons = { 'Aktiva Ärenden': icons.briefcase, 'Nya Förfrågningar': icons.tag, 'Kommande Events (7d)': icons.calendarCheck, 'Fakturerat (30d)': icons.checkCircle };
+                const widgetIcons = { 'Aktiva Ärenden': icons.briefcase, 'Nya Förfrågningar': icons.tag, 'Kommande Events (7d)': icons.calendarCheck, 'Godkända Offerer': icons.checkCircle };
                 const getWidgetData = (filter, label, filterKey) => ({ quotes: state.quotes.filter(filter).slice(0, 3), count: state.quotes.filter(filter).length, label, filterKey});
                 const widgetDefs = [ 
                     getWidgetData(q => !['genomförd', 'betald', 'förlorad', 'arkiverad'].includes(q.status), 'Aktiva Ärenden', 'aktiva'), 
                     getWidgetData(q => q.status === 'utkast', 'Nya Förfrågningar', 'utkast'), 
                     getWidgetData(q => { const d = new Date(q.eventDate); const today = new Date(); const in7 = new Date(new Date().setDate(today.getDate() + 7)); return d >= today && d <= in7; }, 'Kommande Events (7d)', 'kommande'),
-                    getWidgetData(q => q.status === 'betald' || q.status === 'godkänd', 'Fakturerat (30d)', 'betald')
+                    getWidgetData(q => q.status === 'godkänd' || q.status === 'betald', 'Godkända Offerer', 'godkänd')
                 ];
                 widgetDefs.forEach(def => {
                     const widget = createElement('div', { className: `${theme.cardBg} border ${theme.border} rounded-2xl p-5` }, 
@@ -536,7 +537,7 @@
 
             statusDropdownContainer.append(statusButton);
 
-            const searchInput = createElement('input', { className: `w-full pl-5 py-3 ${theme.inputBg} rounded-lg`, placeholder: 'Sök på kundnamn eller ID...', value: state.searchTerm, oninput: e => {
+            const searchInput = createElement('input', { className: `w-full pl-5 py-3 ${theme.inputBg} rounded-lg`, placeholder: 'Sök ärende...', value: state.searchTerm, oninput: e => {
                 setState({ searchTerm: e.target.value }, { render: false });
                 renderQuoteList();
             } });
@@ -772,7 +773,11 @@
                     oninput: e => { if (type !== 'number' && type !== 'date') update(key, e.target.value); },
                     onchange: e => { if (type === 'number' || type === 'date') update(key, type === 'number' ? Number(e.target.value) : e.target.value); }
                 };
-                if(type==='time') props.onclick = () => setState({isTimePickerOpen: true, timePickerTarget: key});
+                if(type==='time') {
+                    props.type = 'text';
+                    props.readOnly = true;
+                    props.onclick = () => setState({isTimePickerOpen: true, timePickerTarget: key});
+                }
                 const input = createElement('input', props);
                 return createElement('div', {className: fullWidth ? 'sm:col-span-2' : ''}, createElement('label', {className:'block text-sm font-medium mb-1'}, label), input);
             };
