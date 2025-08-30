@@ -84,7 +84,7 @@
         }
         
         function safeJsonParse(jsonString, defaultValue) {
-            if (!jsonString) return defaultValue;
+            if (jsonString === null || jsonString === undefined) return defaultValue;
             if (typeof jsonString === 'object') return jsonString;
             if (typeof jsonString !== 'string' || !jsonString.trim()) return defaultValue;
             try {
@@ -115,31 +115,39 @@
 
         function transformN8nQuoteToPortalQuote(n8nQuote) {
             const recordId = n8nQuote.recordId || n8nQuote.recordID || null;
+            
+            const standardDiets = {};
+            if (n8nQuote.hasVegetarian && Number(n8nQuote.numVegetarian) > 0) standardDiets.vegetarian = Number(n8nQuote.numVegetarian);
+            if (n8nQuote.hasVegan && Number(n8nQuote.numVegan) > 0) standardDiets.vegan = Number(n8nQuote.numVegan);
+            if (n8nQuote.hasGlutenFree && Number(n8nQuote.numGlutenFree) > 0) standardDiets.gluten = Number(n8nQuote.numGlutenFree);
+            if (n8nQuote.hasLactoseFree && Number(n8nQuote.numLactoseFree) > 0) standardDiets.laktos = Number(n8nQuote.numLactoseFree);
+            if (n8nQuote.hasNutAllergy && Number(n8nQuote.numNutAllergy) > 0) standardDiets.notallergi = Number(n8nQuote.numNutAllergy);
+
             const quoteObject = {
                 id: n8nQuote.offertId || n8nQuote.OffertID || n8nQuote.id || `GK-${Date.now()}`,
                 recordId: recordId,
                 status: normalizeStatus(n8nQuote.status),
                 customer: n8nQuote.customerName || n8nQuote.kundNamn || '',
                 customerType: n8nQuote.customerType || n8nQuote.kundtyp || 'privat',
-                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktperson || '',
+                contactPerson: n8nQuote.contactPerson || n8nQuote.kontaktperson || n8nQuote.ContactPerson || '',
                 customerIdNumber: n8nQuote.customerIdNumber || n8nQuote.personnummer || '',
                 contactEmail: n8nQuote.contactEmail || n8nQuote.email || '',
                 contactPhone: n8nQuote.contactPhone || n8nQuote.telefon || '',
-                address: n8nQuote.address || n8nQuote.adress || '',
+                address: n8nQuote.address || n8nQuote.adress || n8nQuote.Address || n8nQuote.eventPlats || '',
                 guestCount: Number(n8nQuote.guestCount || n8nQuote.antalGaster) || 0,
                 eventDate: (n8nQuote.eventDate || n8nQuote.eventDatum) ? new Date(n8nQuote.eventDate || n8nQuote.eventDatum).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                eventStartTime: n8nQuote.eventStartTime || n8nQuote.starttid || "17:00",
+                eventStartTime: n8nQuote.eventStartTime || n8nQuote.starttid || n8nQuote.eventTid || "17:00",
                 eventEndTime: n8nQuote.eventEndTime || n8nQuote.sluttid || "01:00",
                 pricePerGuest: Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) || 0,
                 menuDescription: n8nQuote.menuDescription || n8nQuote.meny || n8nQuote.menuPreference || '',
-                customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || '',
+                customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || n8nQuote.KundensOnskemal || n8nQuote.otherRequests || '',
                 numChefs: Number(n8nQuote.numChefs || n8nQuote.antalKockar) || 0,
                 chefCost: Number(n8nQuote.chefCost || n8nQuote.kostnadKockar) || 0,
                 numServingStaff: Number(n8nQuote.numServingStaff || n8nQuote.antalServering) || 0,
                 servingStaffCost: Number(n8nQuote.servingStaffCost || n8nQuote.kostnadServering) || 0,
                 discountAmount: Number(n8nQuote.discountAmount || n8nQuote.rabatt) || 0,
-                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader, []),
-                standardDiets: safeJsonParse(n8nQuote.standardDiets || n8nQuote.standardSpecialkost, {}),
+                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader || n8nQuote.customCostsJSON, []),
+                standardDiets: standardDiets,
                 customDiets: safeJsonParse(n8nQuote.customDiets || n8nQuote.ovrigSpecialkost, []),
                 events: safeJsonParse(n8nQuote.events || n8nQuote.handelselogg, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
                 internalComment: n8nQuote.internalComment || n8nQuote.internaNoteringar || '',
@@ -147,6 +155,7 @@
                 sentDate: n8nQuote.sentDate ? new Date(n8nQuote.sentDate).toLocaleDateString('sv-SE') : null,
                 aiRawLog: n8nQuote.aiRawLog || '',
             };
+            
             if (!quoteObject.total) {
                 quoteObject.total = calculateTotal(quoteObject);
             }
@@ -229,10 +238,29 @@
 
         function showToast(message, type = 'success') { clearTimeout(toastTimer); setState({ toast: { id: Date.now(), message, type } }); toastTimer = setTimeout(() => setState({ toast: null }), 5000); }
         async function handleSaveQuote(quote, show=true) { 
-            const optimisticQuotes = state.quotes.map(q => q.id === quote.id ? quote : q);
-            setState({ quotes: optimisticQuotes }, {render: false});
-            try { await dataService.saveQuote(quote); if(show) showToast(t('toast.saved', {id: quote.id})); } catch (e) { console.error(e); showToast('Sparning misslyckades.', 'error'); loadInitialData(); } 
-            renderApp();
+            const isNewQuote = !state.quotes.some(q => q.id === quote.id);
+            
+            // Optimistic UI update
+            let optimisticQuotes;
+            if (isNewQuote) {
+                optimisticQuotes = [...state.quotes, quote];
+            } else {
+                optimisticQuotes = state.quotes.map(q => q.id === quote.id ? quote : q);
+            }
+             setState({ quotes: optimisticQuotes, formData: null, selectedQuoteId: null });
+
+            try { 
+                const response = await dataService.saveQuote(quote); 
+                if (isNewQuote && response.recordId) {
+                    const finalQuotes = state.quotes.map(q => q.id === quote.id ? { ...q, recordId: response.recordId } : q);
+                    setState({ quotes: finalQuotes }, { render: false });
+                }
+                if(show) showToast(t('toast.saved', {id: quote.id})); 
+            } catch (e) { 
+                console.error(e); 
+                showToast('Sparning misslyckades.', 'error'); 
+                loadInitialData(); // Revert optimistic update on failure
+            } 
         }
         async function handleSendProposal(quote) {
             setState({ isConfirmModalOpen: false, quoteToSend: null });
@@ -702,7 +730,7 @@
                 const totalEl = document.getElementById('modal-total');
                 if(subTotalEl) subTotalEl.textContent = `Summa: ${details.subTotal.toLocaleString('sv-SE')} kr`;
                 if(vatEl) vatEl.textContent = `Moms: ${details.vat.toLocaleString('sv-SE')} kr`;
-                if(totalEl) totalEl.textContent = `Totalt: ${details.total.toLocaleString('sv-SE')} kr`;
+                if(totalEl) totalEl.textContent = `Totalt: ${total.toLocaleString('sv-SE')} kr`;
             };
             
             const statusSelector = createElement('div', { className: 'relative' });
