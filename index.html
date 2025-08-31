@@ -564,15 +564,25 @@
                          const statuses = ['alla', 'prioriterade', 'aktiva', 'kommande', ...Object.keys(statusTextMap)];
                          const newMenu = createElement('div', { id: 'global-filter-status-menu', className: `fixed w-48 ${theme.cardBg} rounded-lg shadow-lg border ${theme.border} z-30 animate-fade-in-fast`, style: { top: `${targetRect.bottom + 5}px`, left: `${targetRect.left}px`} });
                          [...new Set(statuses)].forEach(status => {
+                             let label = t(`filter.${status}`);
+                             if (label === `filter.${status}`) { // Om översättning misslyckas, använd statusTextMap
+                                label = statusTextMap[status] || status;
+                             }
                              newMenu.append(createElement('a', { className: 'block px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer', onclick: () => {
                                  setState({ filter: status, displayLimit: 12 });
                                  newMenu.remove();
-                            } }, t(`filter.${status}`) || statusTextMap[status]));
+                            } }, label));
                          });
                          document.body.append(newMenu);
                     }
                 } 
-            }, t(`filter.${state.filter}`) || statusTextMap[state.filter] || 'Status', createElement('div', {innerHTML: icons.arrowDown('w-4 h-4')}));
+            }, (() => {
+                let label = t(`filter.${state.filter}`);
+                if (label === `filter.${state.filter}`) {
+                    label = statusTextMap[state.filter] || state.filter;
+                }
+                return label;
+            })(), createElement('div', {innerHTML: icons.arrowDown('w-4 h-4')}));
 
             statusDropdownContainer.append(statusButton);
 
@@ -1067,4 +1077,6 @@
     </script>
 </body>
 </html>
+
+
 
