@@ -316,7 +316,12 @@
             const now = new Date(); now.setHours(0, 0, 0, 0);
             return state.quotes.filter(q => {
                 if (!q || !q.status) return false;
-                const eventDate = new Date(q.eventDate); const isActive = !['genomförd', 'betald', 'förlorad', 'arkiverad'].includes(q.status);
+                const eventDate = new Date(q.eventDate);
+                const eventIsInThePast = eventDate < now;
+                const isCompletedStatus = ['genomförd', 'betald'].includes(q.status);
+                const isArchivedStatus = ['förlorad', 'arkiverad'].includes(q.status);
+                const isActive = !(isArchivedStatus || (eventIsInThePast && isCompletedStatus));
+                
                 const filterLogic = { 'prioriterade': isActive && (eventDate >= now), 'aktiva': isActive, 'kommande': eventDate >= now && !['genomförd', 'betald', 'förlorad'].includes(q.status), 'alla': true };
                 const matchesFilter = filterLogic[state.filter] ?? q.status === state.filter;
                 if (!matchesFilter) return false;
@@ -511,8 +516,19 @@
             if(state.showWidgets) {
                 const widgetIcons = { 'Aktiva Ärenden': icons.briefcase, 'Nya Förfrågningar': icons.tag, 'Kommande Events (7d)': icons.calendarCheck, 'Godkända Offerer': icons.checkCircle };
                 const getWidgetData = (filter, label, filterKey) => ({ quotes: state.quotes.filter(filter).slice(0, 3), count: state.quotes.filter(filter).length, label, filterKey});
+                
+                const now = new Date();
+                now.setHours(0, 0, 0, 0);
+                const isActiveFilter = q => {
+                    const eventDate = new Date(q.eventDate);
+                    const eventIsInThePast = eventDate < now;
+                    const isCompletedStatus = ['genomförd', 'betald'].includes(q.status);
+                    const isArchivedStatus = ['förlorad', 'arkiverad'].includes(q.status);
+                    return !(isArchivedStatus || (eventIsInThePast && isCompletedStatus));
+                };
+
                 const widgetDefs = [ 
-                    getWidgetData(q => !['genomförd', 'betald', 'förlorad', 'arkiverad'].includes(q.status), 'Aktiva Ärenden', 'aktiva'), 
+                    getWidgetData(isActiveFilter, 'Aktiva Ärenden', 'aktiva'), 
                     getWidgetData(q => q.status === 'utkast', 'Nya Förfrågningar', 'utkast'), 
                     getWidgetData(q => { const d = new Date(q.eventDate); const today = new Date(); const in7 = new Date(new Date().setDate(today.getDate() + 7)); return d >= today && d <= in7; }, 'Kommande Events (7d)', 'kommande'),
                     getWidgetData(q => q.status === 'godkänd' || q.status === 'betald', 'Godkända Offerer', 'godkänd')
@@ -1038,4 +1054,6 @@
     </script>
 </body>
 </html>
+
+
 
