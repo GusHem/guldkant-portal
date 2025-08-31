@@ -54,6 +54,28 @@
 
         const texts = { sv: { 'login.welcome': 'Välkommen till Guldkant Portalen', 'login.secret_phrase': 'Hemlig fras', 'login.button': 'Logga in', 'login.error': 'Felaktig fras.', 'nav.catering': 'Catering', 'nav.analytics': 'Analytics', 'nav.calendar': 'Kalender', 'dashboard.subtitle': 'En proaktiv översikt av din cateringverksamhet.', 'controls.new_quote': 'Nytt Ärende', 'status.utkast': 'Utkast', 'status.förslag-skickat': 'Förslag Skickat', 'status.godkänd': 'Godkänd', 'status.genomförd': 'Genomförd', 'status.betald': 'Betald', 'status.förlorad': 'Förlorad Affär', 'status.arkiverad': 'Arkiverad', 'filter.prioriterade': 'Prioriterade', 'filter.aktiva': 'Aktiva', 'filter.kommande': 'Kommande', 'filter.alla': 'Alla Ärenden', 'modal.edit_title': 'Redigera Ärende', 'modal.create_title': 'Skapa Nytt Ärende', 'toast.saved': 'Ärende {id} har sparats.', 'toast.proposal_sent': 'Förslag för {id} har skickats.', 'toast.copied': 'Ärendet kopierades!', 'hub.title': 'NordSym Support Hub', 'hub.copied': 'Kopierad!', 'analytics.overview': 'Översikt', 'analytics.calendar': 'Kalender'} };
         const t = (key, vars = {}) => (texts.sv[key] || key).replace(/{(\w+)}/g, (_, k) => vars[k] || `{${k}}`);
+        
+        const menuTemplates = {
+            'BUFFÉ ALTERNATIV': {
+                'Italiensk buffé': "Antipasti misto/formaggi misto, Verdure marinate, Pollo de Limone, Insalata di pasta al pesto, Insalata di mozzarella, Focaccia",
+                'Guldkants klassikerbuffé': "Kallskuret (rostbiff, örtbakad kycklingfilé, italiensk salami, skinka), Sallader (grönsallad, melon & myntasallad, tomat & mozzarellasallad), Såser (vitlöksdressing, örtcrème fraiche), Fransk potatissallad/Potatisgratäng, Ostbricka, Bröd och smör",
+                'Streetfoodbuffé': "Caesarsallad, Crispy shrimp, Pulled pork sandwich, Sushi - California rolls, Pizzaslice, Korean BBQ chicken",
+                'Mingelbuffé Trädgårdsfest': "Pulled pork sliders DIY, Pizzaslice Margherita, Västerbottenpaj, Tomat och mozzarellasallad Cocktail, Focaccia",
+                'Vegetarisk buffé': "Falafel på gråärta, Trädgårdssallad, Rostad kronärtskocka och aubergine, Helbakad blomkål, Svensk tabbouleh, Semitorkade och färska tomater, Grönkålssallad, Rödbetshummus, Färskost, Surdegsbröd och knäckebröd",
+                'Grillbuffé Populär': "Helgrillad fläskfilé, Majskycklingbröst smokey paprika, Helbakad blomkål, Grönkålscaesar, Rostad färskpotatis med grillade medelhavsgrönsaker, Melonsallad, Bernaisesås, Fetaoströras, Rödvinsås, Surdegsbröd med färskost",
+                'Grillbuffé Grande': "BBQ flankstek, Lax med chiliglaze, Grillad citron och zucchini, Rostad delikatesspotatis, Primörsallad, Caesarsallad, Dragoncrème, Avokadoröra, Rökig tomat- och paprikaröra, Surdegsbröd med färskost",
+                'Skärgårdsbuffé sommar och sol': "Matjessill, Varmrökt lax, Lyxig skärgårdspytt, Smörstekt abborre, Brödkorg"
+            },
+            'KOCK-RÄTTER': {
+                'Lyxig skärgårdspytt med kräftor och räkor': "Purjolöksfrästa rotfrukter, bakad lax, kräftstjärtar, västerbottencrème, örter, picklad rödlök, bröd och säsongssallad",
+                'Jambalaya': "Kryddigt ris, rostade grönsaker, chorizo BBQ, grillade kycklinglår, majskolv, rökt aioli, bröd och säsongssallad"
+            },
+            'ÖVRIGA ALTERNATIV': {
+                'Snittar (blandade sorter)': "Krustad fylld med Guldkantsskagen, Blini med crème fraiche, löjrom och rödlök, Crostini med råbiff, kapris och rödbeta, Crostini med getostcrème och semitorkad tomat, Parma- och basilikarullar, Sushi nigiri med lax",
+                'Bröllopsmeny': "Anpassad meny efter överenskommelse med tilltugg, förrätter, varmrätter och desserter",
+                'Anpassad meny': "Diskuterat med Klara Hovmästare enligt kundens önskemål"
+            }
+        };
 
         const N8N_BASE_URL = 'https://nordsym.app.n8n.cloud/webhook/';
         const N8N_ENDPOINTS = { SAVE_QUOTE: 'guldkant-offer-intake-v2', GET_QUOTES: 'quotes', SEND_PROPOSAL: 'quote/dispatch' };
@@ -784,6 +806,58 @@
             };
             const createTextarea = (key, label) => createElement('div', {className:'sm:col-span-2'}, createElement('label', {className:'block text-sm font-medium mb-1'}, label), createElement('textarea', {oninput: e=>update(key,e.target.value), className:`w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]`}, q[key]||''));
             
+            const createMenuDescriptionField = () => {
+                const wrapper = createElement('div', { className: 'sm:col-span-2 relative' });
+                const labelWrapper = createElement('div', { className: 'flex justify-between items-center mb-1' });
+                const label = createElement('label', { className: 'block text-sm font-medium' }, 'Menybeskrivning');
+                
+                const menuButton = createElement('button', {
+                    type: 'button',
+                    className: `text-sm font-semibold ${theme.accent}`,
+                    onclick: (e) => {
+                        e.stopPropagation();
+                        const existingMenu = document.getElementById('menu-template-popup');
+                        if (existingMenu) {
+                            existingMenu.remove();
+                            return;
+                        }
+
+                        const menuPopup = createElement('div', {
+                            id: 'menu-template-popup',
+                            className: `absolute right-0 mt-2 w-full md:w-96 max-h-80 overflow-y-auto ${theme.cardBg} rounded-lg shadow-2xl border ${theme.border} z-20 animate-fade-in-fast`
+                        });
+
+                        Object.entries(menuTemplates).forEach(([category, menus]) => {
+                            menuPopup.append(createElement('h4', { className: `px-4 py-2 font-bold text-xs uppercase ${theme.textSecondary} ${theme.bg}` }, category));
+                            Object.entries(menus).forEach(([title, description]) => {
+                                const menuItem = createElement('a', {
+                                    href: '#',
+                                    className: `block px-4 py-2 text-sm ${theme.text} hover:bg-slate-100 dark:hover:bg-slate-700`,
+                                    onclick: (ev) => {
+                                        ev.preventDefault();
+                                        textarea.value = description;
+                                        update('menuDescription', description);
+                                        menuPopup.remove();
+                                    }
+                                }, title);
+                                menuPopup.append(menuItem);
+                            });
+                        });
+                        wrapper.append(menuPopup);
+                    }
+                }, 'Välj från mall');
+                
+                labelWrapper.append(label, menuButton);
+
+                const textarea = createElement('textarea', {
+                    oninput: e => update('menuDescription', e.target.value),
+                    className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]`
+                }, q.menuDescription || '');
+
+                wrapper.append(labelWrapper, textarea);
+                return wrapper;
+            };
+
             const createSection = (title, id, fields) => {
                 const content = createElement('div', { className: `grid grid-cols-1 sm:grid-cols-2 gap-4 ${state.openSections[id] ? '' : 'hidden'}` }, ...(fields || []));
                 const icon = createElement('div',{className:'transition-transform '+(state.openSections[id] ? 'rotate-180':''), innerHTML:icons.arrowDown('w-5 h-5')});
@@ -897,7 +971,7 @@
 
             const formWrapper = createElement('div', { className: 'flex-grow overflow-y-auto p-4 md:p-6 space-y-6' },
                 createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('customerType', 'Kundtyp'), createField('customerIdNumber', 'Org/Personnummer'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal gäster', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
-                createSection('Meny & Pris', 'menu', [ createField('pricePerGuest', 'Pris per kuvert (exkl. moms)', 'number'), createTextarea('menuDescription', 'Menybeskrivning'), createTextarea('customerRequests', 'Kundens önskemål') ]),
+                createSection('Meny & Pris', 'menu', [ createField('pricePerGuest', 'Pris per kuvert (exkl. moms)', 'number'), createMenuDescriptionField(), createTextarea('customerRequests', 'Kundens önskemål') ]),
                 createSection('Personal & Kostnader', 'costs', [ createField('numChefs', 'Antal Kockar', 'number'), createField('chefCost', 'Kostnad kockar', 'number'), createField('numServingStaff', 'Antal Servering', 'number'), createField('servingStaffCost', 'Kostnad servering', 'number'), createField('discountAmount', 'Rabatt', 'number', true) ]),
                 customCostsSection(),
                 dietSection(),
@@ -934,14 +1008,25 @@
         }
         
         document.body.addEventListener('click', (e) => {
-            if (!e.target.closest('.relative')) {
-                 const globalMenu = document.getElementById('global-card-status-menu') || document.getElementById('global-filter-status-menu');
-                 if(globalMenu) globalMenu.remove();
+            const menusToClose = document.querySelectorAll('#global-card-status-menu, #global-filter-status-menu, #menu-template-popup');
+            let clickedOnMenuButton = e.target.closest('button'); 
+
+            let shouldClose = true;
+            if(clickedOnMenuButton){
+                 const clickFn = clickedOnMenuButton.onclick?.toString();
+                 if(clickFn && (clickFn.includes('global-card-status-menu') || clickFn.includes('global-filter-status-menu') || clickFn.includes('menu-template-popup'))){
+                    shouldClose = false;
+                 }
+            }
+            
+            if (shouldClose) {
+                menusToClose.forEach(menu => menu.remove());
                  if (state.openCardMenu.id) {
                      setState({openCardMenu: {id: null, target: null}}, {render: false});
                  }
             }
         });
+
 
         document.addEventListener('DOMContentLoaded', () => { 
              const savedTheme = localStorage.getItem('guldkant-theme') || 'light';
@@ -953,6 +1038,4 @@
     </script>
 </body>
 </html>
-
-
 
