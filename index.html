@@ -485,7 +485,7 @@
             header.append(createElement('div', {}, createElement('p', { className: `mt-1 text-lg ${theme.textSecondary}` }, t('dashboard.subtitle'))), 
             createElement('div', {className: 'flex items-center gap-2'}, themeToggleButton, createElement('button', { className: `p-2 rounded-lg ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover}`, onclick: () => setState({ showWidgets: !state.showWidgets }), innerHTML: icons.adjustments('w-6 h-6') })));
             
-            const widgetsContainer = createElement('div', { className: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 transition-all duration-500 ease-in-out overflow-hidden ${state.showWidgets ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'}` });
+            const widgetsContainer = createElement('div', { className: `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 transition-all duration-500 ease-in-out overflow-hidden ${state.showWidgets ? 'max-h-[900px] md:max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'}` });
             if(state.showWidgets) {
                 const widgetIcons = { 'Aktiva Ärenden': icons.briefcase, 'Nya Förfrågningar': icons.tag, 'Kommande Events (7d)': icons.calendarCheck, 'Godkända Offerer': icons.checkCircle };
                 const getWidgetData = (filter, label, filterKey) => ({ quotes: state.quotes.filter(filter).slice(0, 3), count: state.quotes.filter(filter).length, label, filterKey});
@@ -953,4 +953,6 @@
     </script>
 </body>
 </html>
+
+
 
