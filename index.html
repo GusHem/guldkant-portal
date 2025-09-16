@@ -393,23 +393,46 @@
 
 
              doc.setFontSize(11).setFont('helvetica', 'bold').text('MENY', 14, 140);
-             doc.setFont('helvetica', 'normal').text(doc.splitTextToSize(quote.menuDescription || 'Ej specificerat', 182), 14, 146);
+             const menuLines = doc.splitTextToSize(quote.menuDescription || 'Ej specificerat', 182);
+             doc.setFont('helvetica', 'normal').text(menuLines, 14, 146);
              
-             doc.setFontSize(11).setFont('helvetica', 'bold').text('PRISER', 14, 180);
+             // Calculate Y position for PRISER section based on menu text height
+             const menuHeight = doc.getTextDimensions(menuLines).h;
+             const pricesYStart = 146 + menuHeight;
 
-             const { subTotal, vat, total } = calculatePriceDetails(quote); const formatCurrency = (amount) => (amount || 0).toLocaleString('sv-SE') + ' kr';
-             const tableRows = [['Mat', `${formatCurrency(quote.pricePerGuest)} x ${quote.guestCount}p`, formatCurrency((quote.guestCount || 0) * (quote.pricePerGuest || 0))]];
-             if (quote.chefCost > 0) tableRows.push(['Kockar', 'Fast kostnad', formatCurrency(quote.chefCost)]); if (quote.servingStaffCost > 0) tableRows.push(['Serveringspersonal', 'Fast kostnad', formatCurrency(quote.servingStaffCost)]); (quote.customCosts || []).forEach(c => tableRows.push([c.description, 'Extra kostnad', formatCurrency(c.amount)])); if (quote.discountAmount > 0) tableRows.push(['Rabatt', '', `-${formatCurrency(quote.discountAmount)}`]);
+             doc.setFontSize(11).setFont('helvetica', 'bold').text('PRISER', 14, pricesYStart + 10);
+
+             const { subTotal, vat, total } = calculatePriceDetails(quote); 
+             const formatCurrency = (amount) => (amount || 0).toLocaleString('sv-SE') + ' kr';
              
-             tableRows.push(['', 'Delsumma:', formatCurrency(subTotal)]);
-             tableRows.push(['', 'Moms (12%):', formatCurrency(vat)]);
-             tableRows.push(['', {content: 'Totalt att betala:', styles:{fontStyle: 'bold'}}, {content: formatCurrency(total), styles:{fontStyle: 'bold'}}]);
+             const tableRows = [];
+             // Main items
+             tableRows.push(['Mat', `${(quote.pricePerGuest || 0).toLocaleString('sv-SE')} kr x ${quote.guestCount}p`, formatCurrency((quote.guestCount || 0) * (quote.pricePerGuest || 0))]);
+             if (quote.chefCost > 0) tableRows.push(['Kockar', 'Fast kostnad', formatCurrency(quote.chefCost)]); 
+             if (quote.servingStaffCost > 0) tableRows.push(['Serveringspersonal', 'Fast kostnad', formatCurrency(quote.servingStaffCost)]); 
+             (quote.customCosts || []).forEach(c => tableRows.push([c.description, 'Extra kostnad', formatCurrency(c.amount)])); 
+             if (quote.discountAmount > 0) tableRows.push(['Rabatt', '', `-${formatCurrency(quote.discountAmount)}`]);
+             
+             // Summary rows with colSpan for better structure in a grid
+             tableRows.push([{ content: 'Delsumma:', colSpan: 2, styles: { halign: 'right' } }, formatCurrency(subTotal)]);
+             tableRows.push([{ content: 'Moms (12%):', colSpan: 2, styles: { halign: 'right' } }, formatCurrency(vat)]);
+             tableRows.push([{ content: 'Totalt att betala:', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }, { content: formatCurrency(total), styles: { fontStyle: 'bold' } }]);
              
              doc.autoTable({ 
-                startY: 185,
-                head: [['Beskrivning', 'Detalj', 'Pris']], body: tableRows, theme: 'plain', 
-                headStyles: { fontStyle: 'bold', textColor: [0,0,0] }, 
-                columnStyles: { 0: {cellWidth: 100}, 1: {halign: 'right'}, 2: { halign: 'right' } } 
+                startY: pricesYStart + 15,
+                head: [['Beskrivning', 'Detalj', 'Pris']], 
+                body: tableRows, 
+                theme: 'grid', 
+                headStyles: { 
+                    fillColor: [184, 157, 80], // Guldkant Gold
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold'
+                }, 
+                columnStyles: { 
+                    0: {cellWidth: 100}, 
+                    1: {halign: 'right'}, 
+                    2: { halign: 'right' } 
+                } 
             });
 
              const pageHeight = doc.internal.pageSize.getHeight();
@@ -1215,4 +1238,5 @@
     </script>
 </body>
 </html>
+
 
