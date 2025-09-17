@@ -313,7 +313,9 @@
                 const response = await dataService.saveQuote(quote); 
                 if (isNewQuote && response.recordId) {
                     const finalQuotes = state.quotes.map(q => q.id === quote.id ? { ...q, recordId: response.recordId } : q);
-                    setState({ quotes: finalQuotes }, { render: false });
+                    // Force a re-render to ensure the card's onClick handler gets the new recordId.
+                    // This prevents a stale closure from causing duplicate entries on subsequent edits.
+                    setState({ quotes: finalQuotes });
                 }
                 if(show) showToast(t('toast.saved', {id: quote.id})); 
             } catch (e) { 
@@ -1445,6 +1447,7 @@
     </script>
 </body>
 </html>
+
 
 
 
