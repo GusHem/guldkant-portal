@@ -404,18 +404,12 @@
              const doc = new jsPDF();
              const logoUrl = 'https://raw.githubusercontent.com/GusHem/Guldkant-Logga/refs/heads/main/Guldkant%20logga.svg';
 
-            // Watermark
-            doc.setFontSize(100).setTextColor(230, 230, 230).setFont('helvetica', 'bold');
-            doc.text('OFFERT', doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() / 1.5, { angle: -45, align: 'center' });
-            doc.setTextColor(0,0,0);
-
-
              try {
                 const response = await fetch(logoUrl);
                 if (!response.ok) throw new Error(`Nätverksfel: ${response.statusText}`);
                 const svgText = await response.text();
                 const logoPngDataUrl = await svgToPngDataUrl(svgText, 300, 300);
-                doc.addImage(logoPngDataUrl, 'PNG', doc.internal.pageSize.getWidth() / 2 - 25, 15, 50, 50);
+                doc.addImage(logoPngDataUrl, 'PNG', doc.internal.pageSize.getWidth() / 2 - 27.5, 15, 55, 50);
              } catch(e) {
                 console.error("Kunde inte rendera SVG för PDF.", e);
              }
@@ -436,8 +430,7 @@
              doc.text(formatDate(quote.eventDate), 120, 106);
              doc.text(`${quote.guestCount} personer`, 120, 111);
              doc.text(`${quote.eventStartTime || ''} - ${quote.eventEndTime || ''}`, 120, 116);
-             
-             doc.text(`Offertnummer: ${quote.id}`, 196, 100, { align: 'right' });
+             doc.text(`Offertnummer: ${quote.id}`, 120, 121);
 
 
              doc.setFontSize(11).setFont('helvetica', 'bold').text('MENY', 14, 140);
@@ -471,6 +464,20 @@
                 head: [['Beskrivning', 'Detalj', 'Pris']], 
                 body: tableRows, 
                 theme: 'grid', 
+                didDrawPage: function (data) {
+                    // Watermark: Rita endast konturen för att inte skymma texten bakom.
+                    doc.setFontSize(100).setFont('helvetica', 'normal');
+                    doc.setDrawColor(221, 221, 221); // Mycket ljusgrå färg (#dddddd)
+                    doc.setLineWidth(0.3);
+                    doc.text('OFFERT', doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() / 2, { 
+                        angle: -45, 
+                        align: 'center', 
+                        renderingMode: 'stroke' // Detta är nyckeln - ritar endast konturen.
+                    });
+                    // Återställ standardinställningar för att inte påverka andra element.
+                    doc.setDrawColor(0, 0, 0); 
+                    doc.setLineWidth(0.2);
+                },
                 headStyles: { 
                     fillColor: [184, 157, 80], // Guldkant Gold
                     textColor: [255, 255, 255],
@@ -845,7 +852,7 @@
                         className: `flex flex-col items-center justify-center w-16 h-16 rounded-lg transition-colors flex-shrink-0 ${userVoted ? 'bg-cyan-500 text-white cursor-not-allowed' : `${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover}`}`,
                         disabled: userVoted,
                         onclick: async (e) => {
-                            if (state.userVotes[feature.recordId] || !feature.recordId) return;
+                            if (state.userVotes[feature.recordId]) return;
 
                             const button = e.currentTarget;
                             const votesSpan = button.querySelector('span');
@@ -863,9 +870,6 @@
 
                             try {
                                 const response = await dataService.voteOnWishlistItem(feature.recordId);
-                                if (typeof response.newVotes !== 'number') {
-                                    throw new Error("Felaktigt svar från servern.");
-                                }
                                 const newVoteCount = response.newVotes;
 
                                 // Update UI with confirmed vote count from backend
@@ -915,15 +919,12 @@
             
             const suggestionBox = createElement('div', { className: `mt-8 p-6 ${theme.cardBg} border ${theme.border} rounded-2xl` });
             const submitButton = createElement('button', { className: `mt-4 px-6 py-2 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`}, 'Skicka in förslag');
-            const suggestionTitleInput = createElement('input', { placeholder: 'Titel på ditt förslag...', className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} mb-4` });
-            const suggestionDescTextarea = createElement('textarea', { placeholder: 'Beskriv din idé här...', className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]` });
+            const suggestionTextarea = createElement('textarea', { placeholder: 'Beskriv din idé här...', className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]` });
 
             submitButton.onclick = async () => {
-                const titleText = suggestionTitleInput.value.trim();
-                const descriptionText = suggestionDescTextarea.value.trim();
-
-                if (!titleText) {
-                    showToast('Vänligen ange en titel för ditt förslag.', 'error');
+                const suggestionText = suggestionTextarea.value.trim();
+                if (!suggestionText) {
+                    showToast('Vänligen beskriv ditt förslag.', 'error');
                     return;
                 }
 
@@ -931,16 +932,12 @@
                 submitButton.textContent = 'Skickar...';
 
                 try {
-                    const newItem = await dataService.addWishlistItem({ title: titleText, description: descriptionText });
-                    if (!newItem || !newItem.recordId) {
-                        throw new Error("Kunde inte skapa förslag, felaktigt svar från servern.");
-                    }
+                    const newItem = await dataService.addWishlistItem({ title: suggestionText });
                     const newItems = [newItem, ...state.wishlistItems];
                     newItems.sort((a, b) => (b.votes || 0) - (a.votes || 0));
                     
                     setState({ wishlistItems: newItems });
-                    suggestionTitleInput.value = '';
-                    suggestionDescTextarea.value = '';
+                    suggestionTextarea.value = ''; // Clear on success
                     showToast('Tack för ditt förslag!', 'success');
                 } catch (error) {
                     console.error("Failed to add suggestion:", error);
@@ -954,8 +951,7 @@
 
             suggestionBox.append(
                 createElement('h3', { className: 'text-xl font-bold mb-4' }, 'Har du ett förslag?'),
-                suggestionTitleInput,
-                suggestionDescTextarea,
+                suggestionTextarea,
                 submitButton
             );
 
@@ -1449,4 +1445,9 @@
     </script>
 </body>
 </html>
+
+
+
+
+
 
