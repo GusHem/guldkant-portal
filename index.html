@@ -50,11 +50,14 @@
             isConfirmModalOpen: false, quoteToSend: null,
             menuTemplates: {},
             isTemplateEditorOpen: false,
+            wishlistItems: [],
+            userVotes: {},
+            isWishlistLoading: false,
         };
 
         function setState(newState, options = { render: true }) { Object.assign(state, newState); if (options.render) renderApp(); }
 
-        const texts = { sv: { 'login.welcome': 'Välkommen till Guldkant Portalen', 'login.secret_phrase': 'Hemlig fras', 'login.button': 'Logga in', 'login.error': 'Felaktig fras.', 'nav.catering': 'Catering', 'nav.analytics': 'Analytics', 'nav.calendar': 'Kalender', 'dashboard.subtitle': 'En proaktiv översikt av din cateringverksamhet.', 'controls.new_quote': 'Nytt', 'status.utkast': 'Utkast', 'status.förslag-skickat': 'Förslag Skickat', 'status.godkänd': 'Godkänd', 'status.genomförd': 'Genomförd', 'status.betald': 'Betald', 'status.förlorad': 'Förlorad Affär', 'status.arkiverad': 'Arkiverad', 'filter.prioriterade': 'Prioriterade', 'filter.aktiva': 'Aktiva', 'filter.kommande': 'Kommande', 'filter.alla': 'Alla', 'modal.edit_title': 'Redigera Ärende', 'modal.create_title': 'Skapa Nytt Ärende', 'toast.saved': 'Ärende {id} har sparats.', 'toast.proposal_sent': 'Förslag för {id} har skickats.', 'toast.copied': 'Ärendet kopierades!', 'hub.title': 'NordSym Support Hub', 'hub.copied': 'Kopierad!', 'analytics.overview': 'Översikt', 'analytics.calendar': 'Kalender', 'toast.templates_saved': 'Menymallar har sparats lokalt i din webbläsare.'} };
+        const texts = { sv: { 'login.welcome': 'Välkommen till Guldkant Portalen', 'login.secret_phrase': 'Hemlig fras', 'login.button': 'Logga in', 'login.error': 'Felaktig fras.', 'nav.catering': 'Catering', 'nav.analytics': 'Analytics', 'nav.calendar': 'Kalender', 'nav.wishlist': 'Önskelista', 'dashboard.subtitle': 'En proaktiv översikt av din cateringverksamhet.', 'controls.new_quote': 'Nytt', 'status.utkast': 'Utkast', 'status.förslag-skickat': 'Förslag Skickat', 'status.godkänd': 'Godkänd', 'status.genomförd': 'Genomförd', 'status.betald': 'Betald', 'status.förlorad': 'Förlorad Affär', 'status.arkiverad': 'Arkiverad', 'filter.prioriterade': 'Prioriterade', 'filter.aktiva': 'Aktiva', 'filter.kommande': 'Kommande', 'filter.alla': 'Alla', 'modal.edit_title': 'Redigera Ärende', 'modal.create_title': 'Skapa Nytt Ärende', 'toast.saved': 'Ärende {id} har sparats.', 'toast.proposal_sent': 'Förslag för {id} har skickats.', 'toast.copied': 'Ärendet kopierades!', 'hub.title': 'NordSym Support Hub', 'hub.copied': 'Kopierad!', 'analytics.overview': 'Översikt', 'analytics.calendar': 'Kalender', 'toast.templates_saved': 'Menymallar har sparats lokalt i din webbläsare.'} };
         const t = (key, vars = {}) => (texts.sv[key] || key).replace(/{(\w+)}/g, (_, k) => vars[k] || `{${k}}`);
         
         const defaultMenuTemplates = {
@@ -80,7 +83,7 @@
         };
 
         const N8N_BASE_URL = 'https://nordsym.app.n8n.cloud/webhook/';
-        const N8N_ENDPOINTS = { SAVE_QUOTE: 'guldkant-offer-intake-v2', GET_QUOTES: 'quotes', SEND_PROPOSAL: 'quote/dispatch' };
+        const N8N_ENDPOINTS = { SAVE_QUOTE: 'guldkant-offer-intake-v2', GET_QUOTES: 'quotes', SEND_PROPOSAL: 'quote/dispatch', GET_WISHLIST: 'wishlist', VOTE_WISHLIST: 'wishlist/vote', ADD_WISHLIST_ITEM: 'wishlist/add' };
         
         class DataService {
             async _post(endpoint, data) {
@@ -90,11 +93,17 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(data)
                     });
+                    
+                    const text = await response.text();
+                    const jsonResponse = text ? JSON.parse(text) : {};
+
                     if (!response.ok) {
+                        if (jsonResponse && jsonResponse.error) {
+                            throw new Error(jsonResponse.error);
+                        }
                         throw new Error(`N8N Error: ${response.statusText}`);
                     }
-                    const text = await response.text();
-                    return text ? JSON.parse(text) : {};
+                    return jsonResponse;
                 } catch (e) {
                     if (e instanceof TypeError && e.message === 'Failed to fetch') {
                          throw new Error('NetworkError');
@@ -105,6 +114,32 @@
             async getQuotes() { const r = await fetch(`${N8N_BASE_URL}${N8N_ENDPOINTS.GET_QUOTES}`); if (!r.ok) throw new Error('Network error'); return (await r.json()).quotes.map(transformN8nQuoteToPortalQuote); }
             async saveQuote(d) { return this._post(N8N_ENDPOINTS.SAVE_QUOTE, transformPortalQuoteToN8nQuote(d)); }
             async sendProposal(payload) { return this._post(N8N_ENDPOINTS.SEND_PROPOSAL, payload); }
+            
+            async getWishlistItems() {
+                // By using the existing _post method, we align this request with other
+                // working endpoints (like saving a quote) and bypass potential CORS
+                // issues that can be specific to GET requests in some server setups.
+                // The corresponding n8n workflow must be set to accept POST.
+                const jsonResponse = await this._post(N8N_ENDPOINTS.GET_WISHLIST, {});
+                if (jsonResponse.success === false) {
+                    throw new Error(jsonResponse.error || 'Kunde inte hämta önskelista.');
+                }
+                return jsonResponse.data || [];
+            }
+            async voteOnWishlistItem(itemId) {
+                const response = await this._post(N8N_ENDPOINTS.VOTE_WISHLIST, { recordId: itemId });
+                if (response.success === false) {
+                    throw new Error(response.error || 'Röstning misslyckades.');
+                }
+                return response;
+            }
+            async addWishlistItem(itemData) {
+                const response = await this._post(N8N_ENDPOINTS.ADD_WISHLIST_ITEM, itemData);
+                if (response.success === false) {
+                    throw new Error(response.error || 'Kunde inte lägga till förslag.');
+                }
+                return response.item;
+            }
         }
 
         function safeJsonParse(jsonString, defaultValue) {
@@ -256,7 +291,7 @@
             return el;
         }
 
-        const icons = { guldkantLogo: `<img src="https://raw.githubusercontent.com/GusHem/Guldkant-Logga/refs/heads/main/Guldkant%20logga.svg" alt="Guldkant Logotyp" class="w-24 h-24 mx-auto">`, nordsymLogo: `<img src="https://raw.githubusercontent.com/GusHem/Logga-utan-text/refs/heads/main/Final%20logo%20no%20text.svg" alt="NordSym Logotyp" class="w-full h-full">`, arrowDown: c => `<svg class="${c}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>`, chevronLeft: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>`, chevronRight: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>`, plus: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>`, chartLineUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>`, invoice: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`, trash: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`, x: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>`, briefcase: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`, calendar: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`, calendarCheck: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zM7 15l4 4 6-6" /></svg>`, checkCircle: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, adjustments: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>`, support: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.546-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, tag: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z M17 17h.01M17 13h5a2 2 0 012 2v5a2 2 0 01-2 2h-5a2 2 0 01-2-2v-5a2 2 0 012-2z"/></svg>`, moon: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>`, sun: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M12 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>`, filePdf: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 21h7a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v11m0 5l4.879-4.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242z" /></svg>`, search: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`, cog: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`};
+        const icons = { guldkantLogo: `<img src="https://raw.githubusercontent.com/GusHem/Guldkant-Logga/refs/heads/main/Guldkant%20logga.svg" alt="Guldkant Logotyp" class="w-24 h-24 mx-auto">`, nordsymLogo: `<img src="https://raw.githubusercontent.com/GusHem/Logga-utan-text/refs/heads/main/Final%20logo%20no%20text.svg" alt="NordSym Logotyp" class="w-full h-full">`, arrowDown: c => `<svg class="${c}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>`, chevronLeft: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>`, chevronRight: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>`, plus: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>`, chartLineUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>`, invoice: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`, trash: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`, x: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>`, briefcase: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`, calendar: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`, calendarCheck: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zM7 15l4 4 6-6" /></svg>`, checkCircle: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, adjustments: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>`, support: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.546-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, tag: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z M17 17h.01M17 13h5a2 2 0 012 2v5a2 2 0 01-2 2h-5a2 2 0 01-2-2v-5a2 2 0 012-2z"/></svg>`, moon: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>`, sun: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M12 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>`, filePdf: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 21h7a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v11m0 5l4.879-4.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242z" /></svg>`, search: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`, cog: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`, lightBulb: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2a3 3 0 013-3h0a3 3 0 013 3v2m-6 0h6M12 3a5.96 5.96 0 014.243 1.757 6 6 0 010 8.486A5.96 5.96 0 0112 15a5.96 5.96 0 01-4.243-1.757 6 6 0 010-8.486A5.96 5.96 0 0112 3z" /></svg>`, chevronUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>`};
         
         const statusTextMap = Object.keys(texts.sv).filter(k => k.startsWith('status.')).reduce((acc, k) => ({ ...acc, [k.replace('status.', '')]: t(k) }), {});
         const statusColors = { utkast: 'bg-yellow-400', 'förslag-skickat': 'bg-blue-400', godkänd: 'bg-green-500', genomförd: 'bg-indigo-500', betald: 'bg-purple-500', förlorad: 'bg-red-500', arkiverad: 'bg-slate-400' };
@@ -313,6 +348,19 @@
         }
         function handleNewQuote() { const newId = `GK-${Date.now()}`; const q = { id: newId, recordId: null, status: 'utkast', guestCount: 20, eventDate: new Date().toISOString().split('T')[0], pricePerGuest: 375, customCosts:[], standardDiets:{}, customDiets:[] }; q.total = calculateTotal(q); setState({ selectedQuoteId: newId, formData: q }); }
         async function loadInitialData() { setState({ isLoading: true }); try { const quotes = await dataService.getQuotes(); setState({ quotes, isLoading: false }); } catch (e) { console.error(e); setState({ isLoading: false, quotes: [] }); showToast('Kunde inte ladda ärenden.', 'error'); } }
+        async function loadWishlistData() {
+            setState({ isWishlistLoading: true });
+            try {
+                const items = await dataService.getWishlistItems();
+                items.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+                setState({ wishlistItems: items, isWishlistLoading: false });
+            } catch (e) {
+                console.error(e);
+                setState({ isWishlistLoading: false, wishlistItems: [] });
+                const errorMessage = e.message === 'NetworkError' ? 'Nätverksfel: Kunde inte ladda önskelistan.' : e.message;
+                showToast(errorMessage, 'error');
+            }
+        }
         
         function getFilteredAndSortedQuotes() {
             const now = new Date(); now.setHours(0, 0, 0, 0);
@@ -481,6 +529,7 @@
                 { id: 'catering', icon: icons.invoice, text: t('nav.catering'), active: state.activeView === 'quotes', action: () => setState({ activeView: 'quotes' }) },
                 { id: 'analytics', icon: icons.chartLineUp, text: t('nav.analytics'), active: state.activeView === 'analytics' && state.analyticsSubView === 'overview', action: () => setState({ activeView: 'analytics', analyticsSubView: 'overview' }) },
                 { id: 'calendar', icon: icons.calendar, text: t('nav.calendar'), active: state.activeView === 'analytics' && state.analyticsSubView === 'calendar', action: () => setState({ activeView: 'analytics', analyticsSubView: 'calendar' }) },
+                { id: 'wishlist', icon: icons.lightBulb, text: t('nav.wishlist'), active: state.activeView === 'wishlist', action: () => { setState({ activeView: 'wishlist' }); loadWishlistData(); } },
             ];
 
             nav.append(
@@ -757,6 +806,160 @@
             }
 
             return createElement('div', { className: `${theme.cardBg} p-4 rounded-2xl border ${theme.border}` }, header, calendarGrid);
+        }
+
+        function renderWishlistPage() {
+            const theme = themes[state.theme];
+
+            const header = createElement('div', {}, 
+                createElement('h1', { className: 'text-3xl md:text-4xl font-extrabold' }, t('nav.wishlist')),
+                createElement('p', { className: `mt-1 text-lg ${theme.textSecondary}` }, 'Här kan du se kommande funktioner, rösta på idéer och lämna egna förslag.')
+            );
+
+            const featureListContainer = createElement('div', { className: 'mt-8 space-y-4' });
+
+            if (state.isWishlistLoading) {
+                featureListContainer.append(createElement('div', { className: 'text-center p-8' }, 'Laddar önskelista...'));
+            } else if (state.wishlistItems.length === 0) {
+                 featureListContainer.append(createElement('div', { className: `text-center p-8 ${theme.cardBg} border ${theme.border} rounded-2xl` }, 'Inga förslag har lagts till än. Bli den första!'));
+            } else {
+                const features = state.wishlistItems;
+                
+                const statusInfo = {
+                    planerad: { text: 'Planerad', color: 'bg-blue-500' },
+                    'under utveckling': { text: 'Under Utveckling', color: 'bg-yellow-500' },
+                    idé: { text: 'Idé', color: 'bg-slate-400' },
+                    släppt: { text: 'Släppt', color: 'bg-green-500' },
+                    // Airtable statuses might be different
+                    'Idea': { text: 'Idé', color: 'bg-slate-400' },
+                    'Planned': { text: 'Planerad', color: 'bg-blue-500' },
+                    'In progress': { text: 'Under Utveckling', color: 'bg-yellow-500' },
+                    'Released': { text: 'Släppt', color: 'bg-green-500' },
+                };
+
+                features.forEach(feature => {
+                    const userVoted = !!state.userVotes[feature.recordId];
+                    const card = createElement('div', { className: `${theme.cardBg} border ${theme.border} rounded-2xl p-5 flex items-center gap-4` });
+                    
+                    const voteButton = createElement('button', { 
+                        className: `flex flex-col items-center justify-center w-16 h-16 rounded-lg transition-colors flex-shrink-0 ${userVoted ? 'bg-cyan-500 text-white cursor-not-allowed' : `${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover}`}`,
+                        disabled: userVoted,
+                        onclick: async (e) => {
+                            if (state.userVotes[feature.recordId] || !feature.recordId) return;
+
+                            const button = e.currentTarget;
+                            const votesSpan = button.querySelector('span');
+                            const originalVotes = parseInt(feature.votes || 0);
+                            
+                            // Optimistic UI update
+                            button.disabled = true;
+                            votesSpan.textContent = originalVotes + 1;
+                            button.classList.remove(theme.buttonSecondaryBg, theme.buttonSecondaryHover);
+                            button.classList.add('bg-cyan-500', 'text-white', 'cursor-not-allowed');
+                            
+                            const newVotesState = { ...state.userVotes, [feature.recordId]: true };
+                            setState({ userVotes: newVotesState }, { render: false });
+                            localStorage.setItem('guldkant-user-votes', JSON.stringify(newVotesState));
+
+                            try {
+                                const response = await dataService.voteOnWishlistItem(feature.recordId);
+                                if (typeof response.newVotes !== 'number') {
+                                    throw new Error("Felaktigt svar från servern.");
+                                }
+                                const newVoteCount = response.newVotes;
+
+                                // Update UI with confirmed vote count from backend
+                                votesSpan.textContent = newVoteCount;
+
+                                const updatedItems = state.wishlistItems.map(item =>
+                                    item.recordId === feature.recordId ? { ...item, votes: newVoteCount } : item
+                                );
+                                updatedItems.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+                                setState({ wishlistItems: updatedItems });
+                            } catch (error) {
+                                console.error("Vote failed:", error);
+                                const errorMessage = error.message === 'NetworkError' ? 'Nätverksfel.' : error.message;
+                                showToast(errorMessage, 'error');
+                                
+                                // Revert UI changes on failure
+                                votesSpan.textContent = originalVotes;
+                                button.classList.add(theme.buttonSecondaryBg, theme.buttonSecondaryHover);
+                                button.classList.remove('bg-cyan-500', 'text-white', 'cursor-not-allowed');
+                                
+                                const revertedVotesState = { ...state.userVotes };
+                                delete revertedVotesState[feature.recordId];
+                                setState({ userVotes: revertedVotesState }, { render: false });
+                                localStorage.setItem('guldkant-user-votes', JSON.stringify(revertedVotesState));
+                                button.disabled = false;
+                            }
+                        }
+                    });
+                    voteButton.append(
+                        createElement('div', { innerHTML: icons.chevronUp('w-6 h-6')}),
+                        createElement('span', { className: 'font-bold text-lg' }, feature.votes || 0)
+                    );
+                    
+                    const content = createElement('div', { className: 'flex-grow' });
+                    content.append(
+                        createElement('h3', { className: 'text-lg font-bold' }, feature.title),
+                        createElement('p', { className: `text-sm ${theme.textSecondary} mt-1` }, feature.description || '')
+                    );
+                    
+                    const statusData = statusInfo[feature.status] || statusInfo.idé;
+                    const statusTag = createElement('div', { className: `text-xs font-semibold text-white px-2 py-1 rounded-full ${statusData.color}` }, statusData.text);
+                    
+                    card.append(voteButton, content, statusTag);
+                    featureListContainer.append(card);
+                });
+            }
+            
+            const suggestionBox = createElement('div', { className: `mt-8 p-6 ${theme.cardBg} border ${theme.border} rounded-2xl` });
+            const submitButton = createElement('button', { className: `mt-4 px-6 py-2 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`}, 'Skicka in förslag');
+            const suggestionTitleInput = createElement('input', { placeholder: 'Titel på ditt förslag...', className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} mb-4` });
+            const suggestionDescTextarea = createElement('textarea', { placeholder: 'Beskriv din idé här...', className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]` });
+
+            submitButton.onclick = async () => {
+                const titleText = suggestionTitleInput.value.trim();
+                const descriptionText = suggestionDescTextarea.value.trim();
+
+                if (!titleText) {
+                    showToast('Vänligen ange en titel för ditt förslag.', 'error');
+                    return;
+                }
+
+                submitButton.disabled = true;
+                submitButton.textContent = 'Skickar...';
+
+                try {
+                    const newItem = await dataService.addWishlistItem({ title: titleText, description: descriptionText });
+                    if (!newItem || !newItem.recordId) {
+                        throw new Error("Kunde inte skapa förslag, felaktigt svar från servern.");
+                    }
+                    const newItems = [newItem, ...state.wishlistItems];
+                    newItems.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+                    
+                    setState({ wishlistItems: newItems });
+                    suggestionTitleInput.value = '';
+                    suggestionDescTextarea.value = '';
+                    showToast('Tack för ditt förslag!', 'success');
+                } catch (error) {
+                    console.error("Failed to add suggestion:", error);
+                    const errorMessage = error.message === 'NetworkError' ? 'Nätverksfel.' : error.message;
+                    showToast(errorMessage, 'error');
+                } finally {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Skicka in förslag';
+                }
+            };
+
+            suggestionBox.append(
+                createElement('h3', { className: 'text-xl font-bold mb-4' }, 'Har du ett förslag?'),
+                suggestionTitleInput,
+                suggestionDescTextarea,
+                submitButton
+            );
+
+            return createElement('div', {}, header, featureListContainer, suggestionBox);
         }
 
         function renderTimePicker() {
@@ -1184,6 +1387,8 @@
                 mainContent.append(renderDashboard());
             } else if (state.activeView === 'analytics') {
                 mainContent.append(renderAnalyticsPage());
+            } else if (state.activeView === 'wishlist') {
+                mainContent.append(renderWishlistPage());
             }
             appRoot.append(mainWrapper);
             if (state.formData) appRoot.append(renderQuoteModal());
@@ -1231,6 +1436,12 @@
                 console.error("Kunde inte ladda menymallar:", e);
                 state.menuTemplates = defaultMenuTemplates;
              }
+             
+             const savedVotes = localStorage.getItem('guldkant-user-votes');
+             if (savedVotes) {
+                 try { state.userVotes = JSON.parse(savedVotes); }
+                 catch (e) { console.error('Could not parse user votes', e); state.userVotes = {}; }
+             }
 
              renderApp(); 
         });
@@ -1238,5 +1449,4 @@
     </script>
 </body>
 </html>
-
 
