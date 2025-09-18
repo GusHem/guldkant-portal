@@ -41,7 +41,7 @@
 
         const state = {
             isLoggedIn: false, isLoading: true, quotes: [], selectedQuoteId: null, activeView: 'quotes',
-            filter: 'prioriterade', searchTerm: '', toast: null, isHubOpen: false, showWidgets: true,
+            filter: 'prioriterade', searchTerm: '', toast: null, showWidgets: true,
             theme: 'light',
             formData: null, openSections: { info: true, menu: true, costs: true, customCosts: true, diets: true, internal: true },
             isTimePickerOpen: false, timePickerTarget: null, calendarViewDate: new Date(),
@@ -541,7 +541,7 @@
             return createElement('div', { className: 'min-h-screen w-full bg-slate-50 flex items-center justify-center p-4' }, form);
         }
         function renderToast() { if (!state.toast) return null; const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' }; return createElement('div', { className: `fixed bottom-5 left-1/2 -translate-x-1/2 px-6 py-3 text-white font-medium rounded-full shadow-2xl z-50 animate-fade-in-fast ${colors[state.toast.type]}` }, state.toast.message); }
-        function renderSupportHub() { if (!state.isHubOpen) return null; const theme = themes[state.theme]; return createElement('div', { className: `fixed bottom-24 right-8 w-80 ${theme.cardBg} rounded-2xl shadow-2xl p-5 z-40 animate-fade-in-scale border ${theme.border}` }, createElement('h3', {className:'font-bold mb-4'}, t('hub.title')), createElement('div', {className:`flex items-center justify-between p-3 ${theme.inputBg} rounded-lg mb-2`}, createElement('span',{className:'text-sm'},'gustav@nordsym.com'), createElement('button',{className:`text-sm font-semibold ${theme.accent}`, onclick:()=>copy('gustav@nordsym.com','E-post')},'Kopiera')), createElement('div', {className:`flex items-center justify-between p-3 ${theme.inputBg} rounded-lg`}, createElement('span',{className:'text-sm'},'0705292583'), createElement('button',{className:`text-sm font-semibold ${theme.accent}`, onclick:()=>copy('0705292583','Telefon')},'Kopiera'))); }
+        
         function renderConfirmModal() {
             if(!state.isConfirmModalOpen) return null;
             const theme = themes[state.theme];
@@ -594,8 +594,8 @@
                 )),
                 createElement('a', { href: 'https://nordsym.com', target:'_blank', className: `flex-shrink-0 border-t ${theme.border} p-4 flex items-center justify-center md:justify-start group` }, createElement('div', {className:`w-8 h-8 ${theme.textSecondary} group-hover:${theme.accent}`, innerHTML: icons.nordsymLogo}), createElement('span', {className:`hidden md:inline ml-3 text-sm font-semibold ${theme.textSecondary} group-hover:${theme.text}`},'NordSym'))
             );
-            const supportFAB = createElement('button', { className: `fixed bottom-8 right-8 w-14 h-14 bg-cyan-500 rounded-full flex items-center justify-center text-white shadow-2xl transform hover:scale-110 transition-transform z-50 ${theme.focus} p-3 ${state.formData ? 'hidden' : ''}`, onclick: () => setState({ isHubOpen: !state.isHubOpen }) }, createElement('div', {className:'w-7 h-7', innerHTML: icons.support('')}));
-            return { mainWrapper: createElement('div', {className:`min-h-screen ${theme.bg} transition-colors`}, nav, mainContent, supportFAB), mainContent };
+            
+            return { mainWrapper: createElement('div', {className:`min-h-screen ${theme.bg} transition-colors`}, nav, mainContent), mainContent };
         }
         
         function renderQuoteList() {
@@ -720,7 +720,6 @@
                 }),
                 createElement('input', { 
                     className: `w-full pl-10 pr-4 py-3 ${theme.inputBg} rounded-lg`, 
-                    placeholder: 'Sök...', 
                     value: state.searchTerm, 
                     oninput: e => {
                         setState({ searchTerm: e.target.value }, { render: false });
@@ -1408,7 +1407,7 @@
                 }}, createElement('h3',{className:'text-lg font-semibold'}, 'Specialkost & Allergener'), icon);
                 return createElement('section', null, header, content);
             };
-
+// ... existing code ... -->
             const formWrapper = createElement('div', { className: 'flex-grow overflow-y-auto p-4 md:p-6 space-y-6' },
                 createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('customerType', 'Kundtyp'), createField('customerIdNumber', 'Org/Personnummer'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal gäster', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
                 createSection('Meny & Pris', 'menu', [ createField('pricePerGuest', 'Pris per kuvert (exkl. moms)', 'number'), createMenuDescriptionField(), createTextarea('customerRequests', 'Kundens önskemål') ]),
@@ -1422,9 +1421,9 @@
             const footer = createElement('footer', {className: `flex-shrink-0 p-4 border-t ${theme.border}`});
             footer.append(createElement('div', {className:'flex justify-end text-sm gap-4 mb-3'}, createElement('span', {id:'modal-subtotal'}, `Summa: ${subTotal.toLocaleString('sv-SE')} kr`), createElement('span', {id:'modal-vat'}, `Moms: ${vat.toLocaleString('sv-SE')} kr`)));
             
-            const footerActions = createElement('div', {className:'flex justify-between items-center'});
+            const footerActions = createElement('div', {className:'flex flex-col md:flex-row md:justify-between md:items-center gap-3'});
             const deleteButton = createElement('button', {
-                className: `px-4 py-2 font-semibold text-red-500 hover:bg-red-100 dark:hover:bg-red-500/10 rounded-lg flex items-center gap-2`,
+                className: `w-full md:w-auto justify-center px-4 py-2 font-semibold text-red-500 hover:bg-red-100 dark:hover:bg-red-500/10 rounded-lg flex items-center gap-2`,
                 onclick: () => {
                     // Ny logik: Hantera osparade utkast direkt, utan att anropa handleDeleteQuote
                     if (!q.recordId) {
@@ -1438,10 +1437,10 @@
                 }
             }, createElement('div', {innerHTML: icons.trash('w-5 h-5')}), 'Radera');
 
-            const mainActions = createElement('div', {className:'flex items-center gap-3'},
-                createElement('div',{id:'modal-total', className:'text-2xl font-bold mr-4'}, `Totalt: ${total.toLocaleString('sv-SE')} kr`),
-                createElement('button',{className:`px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); closeModal()}}, 'Spara'),
-                createElement('button',{className:`px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag')
+            const mainActions = createElement('div', {className:'flex flex-col md:flex-row items-center gap-3 w-full md:w-auto'},
+                createElement('div',{id:'modal-total', className:'text-2xl font-bold order-first md:order-none md:mr-4'}, `Totalt: ${total.toLocaleString('sv-SE')} kr`),
+                createElement('button',{className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); closeModal()}}, 'Spara'),
+                createElement('button',{className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag')
             );
 
             footerActions.append(deleteButton, mainActions);
@@ -1468,7 +1467,7 @@
             appRoot.append(mainWrapper);
             if (state.formData) appRoot.append(renderQuoteModal());
             if (state.isTemplateEditorOpen) appRoot.append(...renderTemplateEditorModal());
-            if(state.isHubOpen) appRoot.append(renderSupportHub());
+            
             if(state.isTimePickerOpen) appRoot.append(renderTimePicker());
             if(state.toast) appRoot.append(renderToast());
             if(state.isConfirmModalOpen) appRoot.append(renderConfirmModal());
@@ -1525,4 +1524,5 @@
     </script>
 </body>
 </html>
+
 
