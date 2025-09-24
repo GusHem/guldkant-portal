@@ -209,7 +209,7 @@
                 numServingStaff: Number(n8nQuote.numServingStaff || n8nQuote.antalServering) || 0,
                 servingStaffCost: Number(n8nQuote.servingStaffCost || n8nQuote.kostnadServering) || 0,
                 discountAmount: Number(n8nQuote.discountAmount || n8nQuote.rabatt) || 0,
-                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader || n8nQuote.customCostsJSON, []),
+                customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader || n8nQuote.customCostsJSON, []).map(c => ({ ...c, vatRate: c.vatRate || 0.25 })),
                 standardDiets: standardDiets,
                 customDiets: safeJsonParse(n8nQuote.customDiets || n8nQuote.ovrigSpecialkost, []),
                 events: safeJsonParse(n8nQuote.events || n8nQuote.handelselogg, [{ timestamp: new Date().toISOString(), event: "Data hämtad från databas" }]),
@@ -267,7 +267,47 @@
         };
 
         const formatDate = (date) => new Date(date).toLocaleDateString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit' });
-        const calculatePriceDetails = (q) => { const base = (Number(q.guestCount) || 0) * (Number(q.pricePerGuest) || 0); const staff = (Number(q.chefCost) || 0) + (Number(q.servingStaffCost) || 0); const custom = (q.customCosts || []).reduce((s, c) => s + (Number(c.amount) || 0), 0); const subTotal = base + staff + custom - (Number(q.discountAmount) || 0); const vat = subTotal * 0.12; return { subTotal, vat, total: subTotal + vat }; };
+        const calculatePriceDetails = (q) => {
+            const foodCost = (Number(q.guestCount) || 0) * (Number(q.pricePerGuest) || 0);
+            const staffCost = (Number(q.chefCost) || 0) + (Number(q.servingStaffCost) || 0);
+            
+            let subTotalBeforeDiscount = foodCost + staffCost;
+            const customCosts = (q.customCosts || []);
+            customCosts.forEach(c => {
+                subTotalBeforeDiscount += (Number(c.amount) || 0);
+            });
+        
+            const discount = (Number(q.discountAmount) || 0);
+            const discountFactor = subTotalBeforeDiscount > 0 ? (subTotalBeforeDiscount - discount) / subTotalBeforeDiscount : 1;
+        
+            const discountedFoodCost = foodCost * discountFactor;
+            const discountedStaffCost = staffCost * discountFactor;
+            
+            const vatBreakdown = {};
+        
+            const foodVat = discountedFoodCost * 0.12;
+            vatBreakdown['12'] = (vatBreakdown['12'] || 0) + foodVat;
+            
+            const staffVat = discountedStaffCost * 0.25;
+            vatBreakdown['25'] = (vatBreakdown['25'] || 0) + staffVat;
+        
+            const discountedCustomCosts = customCosts.map(c => {
+                const discountedAmount = (Number(c.amount) || 0) * discountFactor;
+                const vatRate = Number(c.vatRate) || 0.25;
+                const itemVat = discountedAmount * vatRate;
+                
+                const key = (vatRate * 100).toString().replace('.0','');
+                vatBreakdown[key] = (vatBreakdown[key] || 0) + itemVat;
+        
+                return { ...c, discountedAmount };
+            });
+        
+            const subTotal = discountedFoodCost + discountedStaffCost + discountedCustomCosts.reduce((sum, c) => sum + c.discountedAmount, 0);
+            const totalVat = Object.values(vatBreakdown).reduce((sum, v) => sum + v, 0);
+            const total = subTotal + totalVat;
+            
+            return { subTotal, vat: totalVat, total, vatBreakdown };
+        };
         const calculateTotal = (q) => calculatePriceDetails(q).total;
         
         function createElement(tag, props = {}, ...children) {
@@ -473,20 +513,29 @@
 
              doc.setFontSize(11).setFont('helvetica', 'bold').text('PRISER', 14, pricesYStart + 10);
 
-             const { subTotal, vat, total } = calculatePriceDetails(quote); 
+             const { subTotal, vat, total, vatBreakdown } = calculatePriceDetails(quote); 
              const formatCurrency = (amount) => (amount || 0).toLocaleString('sv-SE') + ' kr';
              
              const tableRows = [];
              // Main items
-             tableRows.push(['Mat', `${(quote.pricePerGuest || 0).toLocaleString('sv-SE')} kr x ${quote.guestCount}p`, formatCurrency((quote.guestCount || 0) * (quote.pricePerGuest || 0))]);
-             if (quote.chefCost > 0) tableRows.push(['Kockar', 'Fast kostnad', formatCurrency(quote.chefCost)]); 
-             if (quote.servingStaffCost > 0) tableRows.push(['Serveringspersonal', 'Fast kostnad', formatCurrency(quote.servingStaffCost)]); 
-             (quote.customCosts || []).forEach(c => tableRows.push([c.description, 'Extra kostnad', formatCurrency(c.amount)])); 
+             tableRows.push(['Mat (12% moms)', `${(quote.pricePerGuest || 0).toLocaleString('sv-SE')} kr x ${quote.guestCount}p`, formatCurrency((quote.guestCount || 0) * (quote.pricePerGuest || 0))]);
+             if (quote.chefCost > 0) tableRows.push(['Kockar (25% moms)', 'Fast kostnad', formatCurrency(quote.chefCost)]); 
+             if (quote.servingStaffCost > 0) tableRows.push(['Serveringspersonal (25% moms)', 'Fast kostnad', formatCurrency(quote.servingStaffCost)]); 
+             (quote.customCosts || []).forEach(c => {
+                const vatPercent = ((c.vatRate || 0.25) * 100);
+                tableRows.push([`${c.description} (${vatPercent}% moms)`, 'Extra kostnad', formatCurrency(c.amount)]);
+             }); 
              if (quote.discountAmount > 0) tableRows.push(['Rabatt', '', `-${formatCurrency(quote.discountAmount)}`]);
              
              // Summary rows with colSpan for better structure in a grid
-             tableRows.push([{ content: 'Delsumma:', colSpan: 2, styles: { halign: 'right' } }, formatCurrency(subTotal)]);
-             tableRows.push([{ content: 'Moms (12%):', colSpan: 2, styles: { halign: 'right' } }, formatCurrency(vat)]);
+             tableRows.push([{ content: 'Delsumma (ex. moms):', colSpan: 2, styles: { halign: 'right' } }, formatCurrency(subTotal)]);
+             
+             Object.entries(vatBreakdown).sort(([a],[b]) => b - a).forEach(([rate, amount]) => {
+                if (amount > 0) {
+                    tableRows.push([{ content: `Moms (${rate}%):`, colSpan: 2, styles: { halign: 'right' } }, formatCurrency(amount)]);
+                }
+             });
+
              tableRows.push([{ content: 'Totalt att betala:', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }, { content: formatCurrency(total), styles: { fontStyle: 'bold' } }]);
              
              doc.autoTable({ 
@@ -1195,12 +1244,20 @@
                 state.formData = newFormData; // Update state directly for smoothness
 
                 const details = calculatePriceDetails(newFormData);
-                const subTotalEl = document.getElementById('modal-subtotal');
-                const vatEl = document.getElementById('modal-vat');
+                const summaryContainer = document.getElementById('modal-price-summary');
                 const totalEl = document.getElementById('modal-total');
-                if(subTotalEl) subTotalEl.textContent = `Summa: ${details.subTotal.toLocaleString('sv-SE')} kr`;
-                if(vatEl) vatEl.textContent = `Moms: ${details.vat.toLocaleString('sv-SE')} kr`;
-                if(totalEl) totalEl.textContent = `Totalt: ${total.toLocaleString('sv-SE')} kr`;
+                
+                if (summaryContainer) {
+                    summaryContainer.innerHTML = '';
+                    summaryContainer.append(createElement('span', { className: 'text-right' }, `Summa (ex. moms): ${details.subTotal.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
+                    Object.entries(details.vatBreakdown).sort(([a],[b]) => b - a).forEach(([rate, amount]) => {
+                        if (amount > 0.01) {
+                            summaryContainer.append(createElement('span', { className: 'text-right' }, `Moms (${rate}%): ${amount.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
+                        }
+                    });
+                }
+
+                if(totalEl) totalEl.textContent = `Totalt: ${details.total.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`;
             };
             
             const statusSelector = createElement('div', { className: 'relative' });
@@ -1315,9 +1372,26 @@
                 const renderRows = (costList) => {
                     container.innerHTML = '';
                     (costList || []).forEach((cost, index) => {
-                        const row = createElement('div', {className: 'grid grid-cols-[1fr_auto_auto] gap-2 items-center'},
+                        const row = createElement('div', {className: 'grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center'},
                             createElement('input', {placeholder:'Beskrivning', value: cost.description, oninput: e => { state.formData.customCosts[index].description = e.target.value; update('customCosts', state.formData.customCosts); }, className: `p-2 rounded-lg border ${theme.border} ${theme.inputBg}` }),
                             createElement('input', {type:'number', value: cost.amount, onchange: e => { state.formData.customCosts[index].amount = Number(e.target.value); update('customCosts', state.formData.customCosts); }, className: `w-24 p-2 rounded-lg border ${theme.border} ${theme.inputBg}` }),
+                            (() => {
+                                const vatSelect = createElement('select', { 
+                                    onchange: e => { 
+                                        state.formData.customCosts[index].vatRate = Number(e.target.value); 
+                                        update('customCosts', state.formData.customCosts); 
+                                    },
+                                    className: `p-2 rounded-lg border ${theme.border} ${theme.inputBg}`
+                                });
+                                [0.25, 0.12, 0.06].forEach(rate => {
+                                    const option = createElement('option', { value: rate }, `${rate * 100}%`);
+                                    if ((cost.vatRate || 0.25) === rate) {
+                                        option.selected = true;
+                                    }
+                                    vatSelect.append(option);
+                                });
+                                return vatSelect;
+                            })(),
                             createElement('button', {className: 'p-2', innerHTML: icons.trash('w-5 h-5 text-red-500'), onclick: ()=>{
                                 const newCosts = state.formData.customCosts.filter((_,i)=>i!==index);
                                 update('customCosts', newCosts);
@@ -1417,9 +1491,17 @@
                 createSection('Interna Noteringar', 'internal', [ createTextarea('internalComment', 'Interna noteringar') ])
             );
 
-            const { subTotal, vat, total } = calculatePriceDetails(q);
+            const { subTotal, vat, total, vatBreakdown } = calculatePriceDetails(q);
             const footer = createElement('footer', {className: `flex-shrink-0 p-4 border-t ${theme.border}`});
-            footer.append(createElement('div', {className:'flex justify-end text-sm gap-4 mb-3'}, createElement('span', {id:'modal-subtotal'}, `Summa: ${subTotal.toLocaleString('sv-SE')} kr`), createElement('span', {id:'modal-vat'}, `Moms: ${vat.toLocaleString('sv-SE')} kr`)));
+            
+            const summaryContainer = createElement('div', { id: 'modal-price-summary', className:'flex flex-col items-end text-sm gap-1 mb-3'});
+            summaryContainer.append(createElement('span', { className: 'text-right' }, `Summa (ex. moms): ${subTotal.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
+            Object.entries(vatBreakdown).sort(([a],[b]) => b - a).forEach(([rate, amount]) => {
+                if (amount > 0.01) {
+                    summaryContainer.append(createElement('span', { className: 'text-right' }, `Moms (${rate}%): ${amount.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
+                }
+            });
+            footer.append(summaryContainer);
             
             const footerActions = createElement('div', {className:'flex flex-col md:flex-row md:justify-between md:items-center gap-3'});
             const deleteButton = createElement('button', {
@@ -1438,7 +1520,7 @@
             }, createElement('div', {innerHTML: icons.trash('w-5 h-5')}), 'Radera');
 
             const mainActions = createElement('div', {className:'flex flex-col md:flex-row items-center gap-3 w-full md:w-auto'},
-                createElement('div',{id:'modal-total', className:'text-2xl font-bold order-first md:order-none md:mr-4'}, `Totalt: ${total.toLocaleString('sv-SE')} kr`),
+                createElement('div',{id:'modal-total', className:'text-2xl font-bold order-first md:order-none md:mr-4'}, `Totalt: ${total.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`),
                 createElement('button',{className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); closeModal()}}, 'Spara'),
                 createElement('button',{className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag')
             );
@@ -1524,5 +1606,6 @@
     </script>
 </body>
 </html>
+
 
 
