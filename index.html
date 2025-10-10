@@ -54,6 +54,7 @@
             wishlistItems: [],
             userVotes: {},
             isWishlistLoading: false,
+            isQuoteModalFooterMinimized: false,
         };
 
         function setState(newState, options = { render: true }) { Object.assign(state, newState); if (options.render) renderApp(); }
@@ -118,10 +119,6 @@
             async deleteQuote(recordId) { return this._post(N8N_ENDPOINTS.DELETE_QUOTE, { recordId }); }
             
             async getWishlistItems() {
-                // By using the existing _post method, we align this request with other
-                // working endpoints (like saving a quote) and bypass potential CORS
-                // issues that can be specific to GET requests in some server setups.
-                // The corresponding n8n workflow must be set to accept POST.
                 const jsonResponse = await this._post(N8N_ENDPOINTS.GET_WISHLIST, {});
                 if (jsonResponse.success === false) {
                     throw new Error(jsonResponse.error || 'Kunde inte hämta önskelista.');
@@ -205,8 +202,12 @@
                 menuDescription: n8nQuote.menuDescription || n8nQuote.meny || n8nQuote.menuPreference || '',
                 customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || n8nQuote.KundensOnskemal || n8nQuote.otherRequests || '',
                 numChefs: Number(n8nQuote.numChefs || n8nQuote.antalKockar) || 0,
+                chefHours: Number(n8nQuote.chefHours) || 0,
+                chefRate: Number(n8nQuote.chefRate) || 0,
                 chefCost: Number(n8nQuote.chefCost || n8nQuote.kostnadKockar) || 0,
                 numServingStaff: Number(n8nQuote.numServingStaff || n8nQuote.antalServering) || 0,
+                servingStaffHours: Number(n8nQuote.servingStaffHours) || 0,
+                servingStaffRate: Number(n8nQuote.servingStaffRate) || 0,
                 servingStaffCost: Number(n8nQuote.servingStaffCost || n8nQuote.kostnadServering) || 0,
                 discountAmount: Number(n8nQuote.discountAmount || n8nQuote.rabatt) || 0,
                 customCosts: safeJsonParse(n8nQuote.customCosts || n8nQuote.extraKostnader || n8nQuote.customCostsJSON, []).map(c => ({ ...c, vatRate: c.vatRate || 0.25 })),
@@ -245,8 +246,12 @@
                 menuDescription: portalQuote.menuDescription,
                 customerRequests: portalQuote.customerRequests,
                 numChefs: Number(portalQuote.numChefs) || 0,
+                chefHours: Number(portalQuote.chefHours) || 0,
+                chefRate: Number(portalQuote.chefRate) || 0,
                 chefCost: Number(portalQuote.chefCost) || 0,
                 numServingStaff: Number(portalQuote.numServingStaff) || 0,
+                servingStaffHours: Number(portalQuote.servingStaffHours) || 0,
+                servingStaffRate: Number(portalQuote.servingStaffRate) || 0,
                 servingStaffCost: Number(portalQuote.servingStaffCost) || 0,
                 discountAmount: Number(portalQuote.discountAmount) || 0,
                 total: Number(portalQuote.total) || 0,
@@ -286,10 +291,8 @@
             const vatBreakdown = {};
         
             const foodVat = discountedFoodCost * 0.12;
-            vatBreakdown['12'] = (vatBreakdown['12'] || 0) + foodVat;
-            
-            const staffVat = discountedStaffCost * 0.25;
-            vatBreakdown['25'] = (vatBreakdown['25'] || 0) + staffVat;
+            const staffVat = discountedStaffCost * 0.12; // Personalmoms är 12%
+            vatBreakdown['12'] = (vatBreakdown['12'] || 0) + foodVat + staffVat;
         
             const discountedCustomCosts = customCosts.map(c => {
                 const discountedAmount = (Number(c.amount) || 0) * discountFactor;
@@ -353,9 +356,6 @@
 
             try { 
                 const response = await dataService.saveQuote(quote); 
-                // Buggfix: Säkerställer att ett nyskapat ärende får sitt recordId från servern
-                // i det lokala state-objektet. Detta förhindrar att en snabb redigering
-                // efter skapande resulterar i en duplicering.
                 if (isNewQuote && response.recordId) {
                     const finalQuotes = state.quotes.map(q => q.id === quote.id ? { ...q, recordId: response.recordId } : q);
                     setState({ quotes: finalQuotes }, { render: false });
@@ -395,14 +395,11 @@
             setState({ isDeleteConfirmModalOpen: false, quoteToDelete: null });
 
             if (!quote || !quote.recordId) {
-                // Denna situation bör inte längre uppstå för existerande ärenden med den nya logiken i modalen,
-                // men finns kvar som en säkerhetsåtgärd. Visar nu ett tydligt fel.
                 console.error("Delete failed: quote is missing a recordId.", quote);
                 showToast('Kan inte radera: Ärendet saknar ett databas-ID.', 'error');
                 return;
             }
 
-            // Optimistisk UI-uppdatering
             const optimisticQuotes = state.quotes.filter(q => q.id !== quote.id);
             setState({ quotes: optimisticQuotes });
 
@@ -412,11 +409,20 @@
             } catch (e) {
                 console.error(e);
                 showToast(t('toast.delete_failed'), 'error');
-                // Återställ om raderingen misslyckades
                 loadInitialData();
             }
         }
-        function handleNewQuote() { const newId = `GK-${Date.now()}`; const q = { id: newId, recordId: null, status: 'utkast', guestCount: 20, eventDate: new Date().toISOString().split('T')[0], pricePerGuest: 375, customCosts:[], standardDiets:{}, customDiets:[] }; q.total = calculateTotal(q); setState({ selectedQuoteId: newId, formData: q }); }
+        function handleNewQuote() { 
+            const newId = `GK-${Date.now()}`; 
+            const q = { 
+                id: newId, recordId: null, status: 'utkast', guestCount: 20, 
+                eventDate: new Date().toISOString().split('T')[0], pricePerGuest: 375, 
+                customCosts:[], standardDiets:{}, customDiets:[],
+                chefHours: 0, chefRate: 0, servingStaffHours: 0, servingStaffRate: 0,
+            }; 
+            q.total = calculateTotal(q); 
+            setState({ selectedQuoteId: newId, formData: q }); 
+        }
         async function loadInitialData() { setState({ isLoading: true }); try { const quotes = await dataService.getQuotes(); setState({ quotes, isLoading: false }); } catch (e) { console.error(e); setState({ isLoading: false, quotes: [] }); showToast('Kunde inte ladda ärenden.', 'error'); } }
         async function loadWishlistData() {
             setState({ isWishlistLoading: true });
@@ -485,7 +491,6 @@
                 const textResponse = await fetch(textLogoUrl);
                 if (!textResponse.ok) throw new Error(`Nätverksfel: ${textResponse.statusText}`);
                 const textSvgText = await textResponse.text();
-                // Using dimensions that reflect the aspect ratio of the text logo
                 const textLogoPngDataUrl = await svgToPngDataUrl(textSvgText, 500, 100); 
                 doc.addImage(textLogoPngDataUrl, 'PNG', doc.internal.pageSize.getWidth() / 2 - 35, 70, 70, 14);
 
@@ -514,7 +519,6 @@
              const menuLines = doc.splitTextToSize(quote.menuDescription || 'Ej specificerat', 182);
              doc.setFont('helvetica', 'normal').text(menuLines, 14, 146);
              
-             // Calculate Y position for PRISER section based on menu text height
              const menuHeight = doc.getTextDimensions(menuLines).h;
              const pricesYStart = 146 + menuHeight;
 
@@ -524,17 +528,25 @@
              const formatCurrency = (amount) => (amount || 0).toLocaleString('sv-SE') + ' kr';
              
              const tableRows = [];
-             // Main items
              tableRows.push(['Mat (12% moms)', `${(quote.pricePerGuest || 0).toLocaleString('sv-SE')} kr x ${quote.guestCount}p`, formatCurrency((quote.guestCount || 0) * (quote.pricePerGuest || 0))]);
-             if (quote.chefCost > 0) tableRows.push(['Kockar (25% moms)', 'Fast kostnad', formatCurrency(quote.chefCost)]); 
-             if (quote.servingStaffCost > 0) tableRows.push(['Serveringspersonal (25% moms)', 'Fast kostnad', formatCurrency(quote.servingStaffCost)]); 
+             if (quote.chefCost > 0) {
+                const detailText = (quote.numChefs && quote.chefHours && quote.chefRate) 
+                    ? `${quote.numChefs}st x ${quote.chefHours}h x ${quote.chefRate} kr/h`
+                    : 'Fast kostnad';
+                tableRows.push(['Kockar (12% moms)', detailText, formatCurrency(quote.chefCost)]); 
+             }
+             if (quote.servingStaffCost > 0) {
+                const detailText = (quote.numServingStaff && quote.servingStaffHours && quote.servingStaffRate)
+                    ? `${quote.numServingStaff}st x ${quote.servingStaffHours}h x ${quote.servingStaffRate} kr/h`
+                    : 'Fast kostnad';
+                tableRows.push(['Serveringspersonal (12% moms)', detailText, formatCurrency(quote.servingStaffCost)]);
+             }
              (quote.customCosts || []).forEach(c => {
                 const vatPercent = ((c.vatRate || 0.25) * 100);
                 tableRows.push([`${c.description} (${vatPercent}% moms)`, 'Extra kostnad', formatCurrency(c.amount)]);
              }); 
              if (quote.discountAmount > 0) tableRows.push(['Rabatt', '', `-${formatCurrency(quote.discountAmount)}`]);
              
-             // Summary rows with colSpan for better structure in a grid
              tableRows.push([{ content: 'Delsumma (ex. moms):', colSpan: 2, styles: { halign: 'right' } }, formatCurrency(subTotal)]);
              
              Object.entries(vatBreakdown).sort(([a],[b]) => b - a).forEach(([rate, amount]) => {
@@ -551,29 +563,15 @@
                 body: tableRows, 
                 theme: 'grid', 
                 didDrawPage: function (data) {
-                    // Watermark: Rita endast konturen för att inte skymma texten bakom.
                     doc.setFontSize(100).setFont('helvetica', 'normal');
-                    doc.setDrawColor(221, 221, 221); // Mycket ljusgrå färg (#dddddd)
+                    doc.setDrawColor(221, 221, 221);
                     doc.setLineWidth(0.3);
-                    doc.text('OFFERT', doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() / 2, { 
-                        angle: -45, 
-                        align: 'center', 
-                        renderingMode: 'stroke' // Detta är nyckeln - ritar endast konturen.
-                    });
-                    // Återställ standardinställningar för att inte påverka andra element.
+                    doc.text('OFFERT', doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() / 2, { angle: -45, align: 'center', renderingMode: 'stroke' });
                     doc.setDrawColor(0, 0, 0); 
                     doc.setLineWidth(0.2);
                 },
-                headStyles: { 
-                    fillColor: [184, 157, 80], // Guldkant Gold
-                    textColor: [255, 255, 255],
-                    fontStyle: 'bold'
-                }, 
-                columnStyles: { 
-                    0: {cellWidth: 100}, 
-                    1: {halign: 'right'}, 
-                    2: { halign: 'right' } 
-                } 
+                headStyles: { fillColor: [184, 157, 80], textColor: [255, 255, 255], fontStyle: 'bold' }, 
+                columnStyles: { 0: {cellWidth: 100}, 1: {halign: 'right'}, 2: { halign: 'right' } } 
             });
 
              const pageHeight = doc.internal.pageSize.getHeight();
@@ -753,7 +751,7 @@
                          const newMenu = createElement('div', { id: 'global-filter-status-menu', className: `fixed w-48 ${theme.cardBg} rounded-lg shadow-lg border ${theme.border} z-30 animate-fade-in-fast`, style: { top: `${targetRect.bottom + 5}px`, left: `${targetRect.left}px`} });
                          [...new Set(statuses)].forEach(status => {
                              let label = t(`filter.${status}`);
-                             if (label === `filter.${status}`) { // Om översättning misslyckas, använd statusTextMap
+                             if (label === `filter.${status}`) {
                                 label = statusTextMap[status] || status;
                              }
                              newMenu.append(createElement('a', { className: 'block px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer', onclick: () => {
@@ -908,7 +906,7 @@
             const month = currentDate.getMonth();
             const firstDay = new Date(year, month, 1);
             const lastDay = new Date(year, month + 1, 0);
-            const startDay = (firstDay.getDay() + 6) % 7; // Måndag = 0
+            const startDay = (firstDay.getDay() + 6) % 7;
 
             for (let i = 0; i < startDay; i++) {
                 calendarGrid.append(createElement('div', { className: `${theme.bg} min-h-[120px]` }));
@@ -953,7 +951,6 @@
                     'under utveckling': { text: 'Under Utveckling', color: 'bg-yellow-500' },
                     idé: { text: 'Idé', color: 'bg-slate-400' },
                     släppt: { text: 'Släppt', color: 'bg-green-500' },
-                    // Airtable statuses might be different
                     'Idea': { text: 'Idé', color: 'bg-slate-400' },
                     'Planned': { text: 'Planerad', color: 'bg-blue-500' },
                     'In progress': { text: 'Under Utveckling', color: 'bg-yellow-500' },
@@ -974,7 +971,6 @@
                             const votesSpan = button.querySelector('span');
                             const originalVotes = parseInt(feature.votes || 0);
                             
-                            // Optimistic UI update
                             button.disabled = true;
                             votesSpan.textContent = originalVotes + 1;
                             button.classList.remove(theme.buttonSecondaryBg, theme.buttonSecondaryHover);
@@ -988,7 +984,6 @@
                                 const response = await dataService.voteOnWishlistItem(feature.recordId);
                                 const newVoteCount = response.newVotes;
 
-                                // Update UI with confirmed vote count from backend
                                 votesSpan.textContent = newVoteCount;
 
                                 const updatedItems = state.wishlistItems.map(item =>
@@ -1001,7 +996,6 @@
                                 const errorMessage = error.message === 'NetworkError' ? 'Nätverksfel.' : error.message;
                                 showToast(errorMessage, 'error');
                                 
-                                // Revert UI changes on failure
                                 votesSpan.textContent = originalVotes;
                                 button.classList.add(theme.buttonSecondaryBg, theme.buttonSecondaryHover);
                                 button.classList.remove('bg-cyan-500', 'text-white', 'cursor-not-allowed');
@@ -1053,7 +1047,7 @@
                     newItems.sort((a, b) => (b.votes || 0) - (a.votes || 0));
                     
                     setState({ wishlistItems: newItems });
-                    suggestionTextarea.value = ''; // Clear on success
+                    suggestionTextarea.value = '';
                     showToast('Tack för ditt förslag!', 'success');
                 } catch (error) {
                     console.error("Failed to add suggestion:", error);
@@ -1129,7 +1123,7 @@
                                 delete currentTemplates[category];
                                 rerender();
                             } else {
-                                e.target.value = category; // Revert if name exists or is empty
+                                e.target.value = category;
                             }
                         }
                     });
@@ -1229,7 +1223,7 @@
             if (!state.formData) return null;
             const theme = themes[state.theme];
             const q = state.formData;
-            const closeModal = () => setState({ formData: null, selectedQuoteId: null, isModalStatusOpen: false });
+            const closeModal = () => setState({ formData: null, selectedQuoteId: null, isModalStatusOpen: false, isQuoteModalFooterMinimized: false });
 
             const fragment = document.createDocumentFragment();
 
@@ -1251,10 +1245,43 @@
                 onclick: e => e.stopPropagation()
             });
 
+            const handleStaffInputChange = (key, value) => {
+                const newFormData = { ...state.formData, [key]: Number(value) };
+
+                const numChefs = newFormData.numChefs || 0;
+                const chefHours = newFormData.chefHours || 0;
+                const chefRate = newFormData.chefRate || 0;
+                newFormData.chefCost = numChefs * chefHours * chefRate;
+
+                const numServingStaff = newFormData.numServingStaff || 0;
+                const servingStaffHours = newFormData.servingStaffHours || 0;
+                const servingStaffRate = newFormData.servingStaffRate || 0;
+                newFormData.servingStaffCost = numServingStaff * servingStaffHours * servingStaffRate;
+                
+                newFormData.total = calculateTotal(newFormData);
+                state.formData = newFormData;
+                
+                const details = calculatePriceDetails(newFormData);
+                const summaryContainer = document.getElementById('modal-price-summary');
+                const totalEl = document.getElementById('modal-total');
+                
+                if (summaryContainer) {
+                    summaryContainer.innerHTML = '';
+                    summaryContainer.append(createElement('span', { className: 'text-right' }, `Summa (ex. moms): ${details.subTotal.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
+                    Object.entries(details.vatBreakdown).sort(([a],[b]) => b - a).forEach(([rate, amount]) => {
+                        if (amount > 0.01) {
+                            summaryContainer.append(createElement('span', { className: 'text-right' }, `Moms (${rate}%): ${amount.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
+                        }
+                    });
+                }
+
+                if(totalEl) totalEl.textContent = `Totalt: ${details.total.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`;
+            };
+
             const update = (key, value) => {
                 const newFormData = { ...state.formData, [key]: value };
                 newFormData.total = calculateTotal(newFormData);
-                state.formData = newFormData; // Update state directly for smoothness
+                state.formData = newFormData;
 
                 const details = calculatePriceDetails(newFormData);
                 const summaryContainer = document.getElementById('modal-price-summary');
@@ -1378,6 +1405,41 @@
                 return createElement('section', null, header, content);
             };
 
+            const createPersonalCostsSection = () => {
+                const id = 'costs';
+                const content = createElement('div', { className: `space-y-4 ${state.openSections[id] ? '' : 'hidden'}`});
+
+                const createStaffRow = (type) => {
+                    const isChef = type === 'chef';
+                    const label = isChef ? 'Kockar' : 'Servering';
+                    const numKey = isChef ? 'numChefs' : 'numServingStaff';
+                    const hoursKey = isChef ? 'chefHours' : 'servingStaffHours';
+                    const rateKey = isChef ? 'chefRate' : 'servingStaffRate';
+
+                    const row = createElement('div', { className: 'grid grid-cols-[1fr_1fr_1fr_1fr] md:grid-cols-[auto_1fr_1fr_1fr] gap-x-2 items-center' },
+                        createElement('label', { className: 'font-medium col-span-4 md:col-span-1' }, label),
+                        createElement('input', { type: 'number', placeholder: 'Antal', value: q[numKey] || '', onchange: e => handleStaffInputChange(numKey, e.target.value), className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg}` }),
+                        createElement('input', { type: 'number', placeholder: 'Timmar', value: q[hoursKey] || '', onchange: e => handleStaffInputChange(hoursKey, e.target.value), className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg}` }),
+                        createElement('input', { type: 'number', placeholder: 'kr/h', value: q[rateKey] || '', onchange: e => handleStaffInputChange(rateKey, e.target.value), className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg}` })
+                    );
+                    return row;
+                };
+                
+                content.append(
+                    createStaffRow('chef'),
+                    createStaffRow('serving'),
+                    createElement('div', { className: 'pt-2 sm:col-span-2' }, createField('discountAmount', 'Rabatt', 'number', true))
+                );
+
+                const icon = createElement('div',{className:'transition-transform '+(state.openSections[id] ? 'rotate-180':''), innerHTML:icons.arrowDown('w-5 h-5')});
+                const header = createElement('div', { className: 'flex items-center justify-between cursor-pointer mb-4', onclick: () => {
+                    content.classList.toggle('hidden');
+                    icon.classList.toggle('rotate-180');
+                    state.openSections[id] = !state.openSections[id];
+                }}, createElement('h3',{className:'text-lg font-semibold'}, 'Personal & Kostnader'), icon);
+                return createElement('section', null, header, content);
+            };
+
             const customCostsSection = () => {
                 const id = 'customCosts';
                 const container = createElement('div', { className: `space-y-4`});
@@ -1417,7 +1479,7 @@
                 
                 renderRows(q.customCosts);
                 const addButton = createElement('button', {className: `text-sm font-semibold ${theme.accent}`, onclick: () => {
-                    const newCosts = [...(state.formData.customCosts || []), {description: '', amount: 0}];
+                    const newCosts = [...(state.formData.customCosts || []), {description: '', amount: 0, vatRate: 0.25}];
                     update('customCosts', newCosts);
                     renderRows(newCosts);
                 }}, '+ Lägg till extra kostnad');
@@ -1494,19 +1556,38 @@
                 }}, createElement('h3',{className:'text-lg font-semibold'}, 'Specialkost & Allergener'), icon);
                 return createElement('section', null, header, content);
             };
-// ... existing code ... -->
+
             const formWrapper = createElement('div', { className: 'flex-grow overflow-y-auto p-4 md:p-6 space-y-6' },
                 createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('customerType', 'Kundtyp'), createField('customerIdNumber', 'Org/Personnummer'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal gäster', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
                 createSection('Meny & Pris', 'menu', [ createField('pricePerGuest', 'Pris per kuvert (exkl. moms)', 'number'), createMenuDescriptionField(), createTextarea('customerRequests', 'Kundens önskemål') ]),
-                createSection('Personal & Kostnader', 'costs', [ createField('numChefs', 'Antal Kockar', 'number'), createField('chefCost', 'Kostnad kockar', 'number'), createField('numServingStaff', 'Antal Servering', 'number'), createField('servingStaffCost', 'Kostnad servering', 'number'), createField('discountAmount', 'Rabatt', 'number', true) ]),
+                createPersonalCostsSection(),
                 customCostsSection(),
                 dietSection(),
                 createSection('Interna Noteringar', 'internal', [ createTextarea('internalComment', 'Interna noteringar') ])
             );
 
             const { subTotal, vat, total, vatBreakdown } = calculatePriceDetails(q);
-            const footer = createElement('footer', {className: `flex-shrink-0 p-4 border-t ${theme.border}`});
+            const footer = createElement('footer', {className: `flex-shrink-0 border-t ${theme.border} relative`});
             
+            const toggleButton = createElement('button', {
+                className: `absolute -top-3 left-1/2 -translate-x-1/2 w-10 h-6 ${theme.cardBg} border ${theme.border} rounded-full flex items-center justify-center z-10`,
+                onclick: () => {
+                    const minimized = !state.isQuoteModalFooterMinimized;
+                    setState({ isQuoteModalFooterMinimized: minimized }, { render: false });
+                    const content = document.getElementById('modal-footer-content');
+                    const icon = document.getElementById('footer-toggle-icon');
+                    if (content && icon) {
+                        content.classList.toggle('max-h-0', minimized);
+                        content.classList.toggle('opacity-0', minimized);
+                        content.classList.toggle('invisible', minimized);
+                        content.classList.toggle('p-4', !minimized);
+                        icon.innerHTML = minimized ? icons.chevronUp('w-5 h-5') : icons.arrowDown('w-5 h-5');
+                    }
+                }
+            }, createElement('div', { id: 'footer-toggle-icon', innerHTML: state.isQuoteModalFooterMinimized ? icons.chevronUp('w-5 h-5') : icons.arrowDown('w-5 h-5')}));
+
+            const footerContent = createElement('div', { id: 'modal-footer-content', className: `transition-all duration-300 overflow-hidden ${state.isQuoteModalFooterMinimized ? 'max-h-0 opacity-0 invisible' : 'max-h-96 opacity-100 visible p-4'}` });
+
             const summaryContainer = createElement('div', { id: 'modal-price-summary', className:'flex flex-col items-end text-sm gap-1 mb-3'});
             summaryContainer.append(createElement('span', { className: 'text-right' }, `Summa (ex. moms): ${subTotal.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
             Object.entries(vatBreakdown).sort(([a],[b]) => b - a).forEach(([rate, amount]) => {
@@ -1514,19 +1595,16 @@
                     summaryContainer.append(createElement('span', { className: 'text-right' }, `Moms (${rate}%): ${amount.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`));
                 }
             });
-            footer.append(summaryContainer);
             
             const footerActions = createElement('div', {className:'flex flex-col md:flex-row md:justify-between md:items-center gap-3'});
             const deleteButton = createElement('button', {
                 className: `w-full md:w-auto justify-center px-4 py-2 font-semibold text-red-500 hover:bg-red-100 dark:hover:bg-red-500/10 rounded-lg flex items-center gap-2`,
                 onclick: () => {
-                    // Ny logik: Hantera osparade utkast direkt, utan att anropa handleDeleteQuote
                     if (!q.recordId) {
                         closeModal();
                         showToast('Utkast raderat.');
                     } else {
                         closeModal();
-                        // Ge modalen tid att stängas innan bekräftelserutan öppnas
                         setTimeout(() => setState({ isDeleteConfirmModalOpen: true, quoteToDelete: q }), 100);
                     }
                 }
@@ -1539,7 +1617,8 @@
             );
 
             footerActions.append(deleteButton, mainActions);
-            footer.append(footerActions);
+            footerContent.append(summaryContainer, footerActions);
+            footer.append(toggleButton, footerContent);
             
             modalContent.append(header, formWrapper, footer);
             modalPositioner.append(modalContent);
@@ -1619,6 +1698,4 @@
     </script>
 </body>
 </html>
-
-
 
