@@ -1246,7 +1246,17 @@
                 let parsedLog;
                 let isJsonFormat = false;
                 try {
-                    parsedLog = JSON.parse(logContent);
+                    // Försök parsa loggen
+                    let tempLog = JSON.parse(logContent);
+                    
+                    // KONTROLL: Om resultatet är en sträng, är datan "dubbel-paketerad".
+                    // Vi måste parsa den en gång till.
+                    if (typeof tempLog === 'string') {
+                        parsedLog = JSON.parse(tempLog); // Andra parsningen
+                    } else {
+                        parsedLog = tempLog; // Den var korrekt paketerad
+                    }
+
                     // Kontrollera att det är en array av objekt med rätt struktur
                     if (Array.isArray(parsedLog) && parsedLog.length > 0 && parsedLog.every(e => e.role && e.parts)) {
                         isJsonFormat = true;
@@ -1825,6 +1835,7 @@
     </script>
 </body>
 </html>
+
 
 
 
