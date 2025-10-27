@@ -218,7 +218,7 @@
                 internalComment: n8nQuote.internalComment || n8nQuote.internaNoteringar || '',
                 total: Number(n8nQuote.total || n8nQuote.totalt) || 0,
                 sentDate: n8nQuote.sentDate ? new Date(n8nQuote.sentDate).toLocaleDateString('sv-SE') : null,
-                aiRawLog: n8nQuote.aiRawLog || '',
+                aiRawLog: n8nQuote['Full Conversation Log'] || n8nQuote.aiRawLog || '',
             };
             
             if (!quoteObject.total) {
@@ -1237,15 +1237,58 @@
             const logContent = state.formData.aiRawLog;
             let contentElement;
 
-            if (logContent && logContent.trim() !== "") {
-                contentElement = createElement('pre', { 
-                    className: `w-full h-full p-4 ${theme.inputBg} rounded-lg overflow-auto whitespace-pre-wrap`,
-                    style: { fontFamily: 'monospace' }
-                }, logContent);
-            } else {
+            if (!logContent || logContent.trim() === "") {
+                // Case 1: Loggen är tom
                 contentElement = createElement('div', { className: `w-full h-full p-4 ${theme.inputBg} rounded-lg flex items-center justify-center` },
                     createElement('p', { className: theme.textSecondary }, 'Detta ärende skapades manuellt. Ingen chattlogg finns tillgänglig.')
                 );
+            } else {
+                let parsedLog;
+                let isJsonFormat = false;
+                try {
+                    parsedLog = JSON.parse(logContent);
+                    // Kontrollera att det är en array av objekt med rätt struktur
+                    if (Array.isArray(parsedLog) && parsedLog.length > 0 && parsedLog.every(e => e.role && e.parts)) {
+                        isJsonFormat = true;
+                    }
+                } catch (e) {
+                    isJsonFormat = false;
+                    parsedLog = logContent; // Behåll originalsträngen för fallback
+                }
+
+                if (isJsonFormat) {
+                    // Case 2: Snygg och ren JSON-chattvy
+                    contentElement = createElement('div', { className: 'flex flex-col space-y-4 p-2' });
+                    
+                    parsedLog.forEach(entry => {
+                        const role = entry.role;
+                        const text = (entry.parts && entry.parts[0] ? entry.parts[0].text : '[Tomt meddelande]')
+                            .replace(/\[ÄRENDE_VIDARE\]/g, '') // Ta bort system-taggar
+                            .trim();
+                        
+                        if (!text) return; // Rendera inte tomma meddelanden
+
+                        const isUser = role === 'user';
+                        
+                        const bubble = createElement('div', {
+                            className: `max-w-xs md:max-w-lg p-3 rounded-xl shadow-sm ${isUser ? 'bg-cyan-500 text-white' : `${theme.inputBg} ${theme.text}`}`
+                        }, createElement('p', { className: 'text-sm whitespace-pre-wrap' }, text));
+
+                        const label = createElement('span', { className: `text-xs font-semibold mb-1 ${theme.textSecondary}` }, isUser ? 'Kund' : 'Chatt-agent');
+                        
+                        const messageWrapper = createElement('div', {
+                            className: `flex flex-col ${isUser ? 'items-end' : 'items-start'}`
+                        }, label, bubble);
+
+                        contentElement.append(messageWrapper);
+                    });
+                } else {
+                    // Case 3: Fallback för vanlig text
+                    contentElement = createElement('pre', { 
+                        className: `w-full h-full p-4 ${theme.inputBg} rounded-lg overflow-auto whitespace-pre-wrap`,
+                        style: { fontFamily: 'monospace' }
+                    }, parsedLog); // parsedLog är originalsträngen här
+                }
             }
 
             const modalContent = createElement('div', { 
@@ -1782,6 +1825,8 @@
     </script>
 </body>
 </html>
+
+
 
 
 
