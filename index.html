@@ -55,6 +55,7 @@
             userVotes: {},
             isWishlistLoading: false,
             isQuoteModalFooterMinimized: false,
+            isChatLogModalOpen: false,
         };
 
         function setState(newState, options = { render: true }) { Object.assign(state, newState); if (options.render) renderApp(); }
@@ -339,8 +340,8 @@
             });
             return el;
         }
-
-        const icons = { nordsymLogo: `<img src="https://raw.githubusercontent.com/GusHem/Logga-utan-text/refs/heads/main/Final%20logo%20no%20text.svg" alt="NordSym Logotyp" class="w-full h-full">`, arrowDown: c => `<svg class="${c}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>`, chevronLeft: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>`, chevronRight: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>`, plus: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>`, chartLineUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>`, invoice: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`, trash: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`, x: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>`, briefcase: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`, calendar: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`, calendarCheck: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zM7 15l4 4 6-6" /></svg>`, checkCircle: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, adjustments: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>`, support: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.546-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, tag: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z M17 17h.01M17 13h5a2 2 0 012 2v5a2 2 0 01-2 2h-5a2 2 0 01-2-2v-5a2 2 0 012-2z"/></svg>`, moon: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>`, sun: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M12 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>`, filePdf: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 21h7a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v11m0 5l4.879-4.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242z" /></svg>`, search: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`, cog: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`, lightBulb: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2a3 3 0 013-3h0a3 3 0 013 3v2m-6 0h6M12 3a5.96 5.96 0 014.243 1.757 6 6 0 010 8.486A5.96 5.96 0 0112 15a5.96 5.96 0 01-4.243-1.757 6 6 0 010-8.486A5.96 5.96 0 0112 3z" /></svg>`, chevronUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>`};
+        const icons = { nordsymLogo: `<img src="https://raw.githubusercontent.com/GusHem/Logga-utan-text/refs/heads/main/Final%20logo%20no%20text.svg" alt="NordSym Logotyp" class="w-full h-full">`, arrowDown: c => `<svg class="${c}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>`, chevronLeft: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>`, chevronRight: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>`, plus: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>`, chartLineUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>`, invoice: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`, trash: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`, x: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>`, briefcase: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`, calendar: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`, calendarCheck: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zM7 15l4 4 6-6" /></svg>`, checkCircle: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, adjustments: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>`, support: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.546-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, tag: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a2 2 0 012 2v5a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z M17 17h.01M17 13h5a2 2 0 012 2v5a2 2 0 01-2 2h-5a2 2 0 01-2-2v-5a2 2 0 012-2z"/></svg>`, moon: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>`, sun: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M12 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>`, filePdf: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 21h7a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v11m0 5l4.879-4.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242z" /></svg>`, search: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`, cog: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`, lightBulb: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2a3 3 0 013-3h0a3 3 0 013 3v2m-6 0h6M12 3a5.96 5.96 0 014.243 1.757 6 6 0 010 8.486A5.96 5.96 0 0112 15a5.96 5.96 0 01-4.243-1.757 6 6 0 010-8.486A5.96 5.96 0 0112 3z" /></svg>`, chevronUp: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>`,
+            chatAlt2: c => `<svg class="${c}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a2 2 0 01-2-2V4a2 2 0 012-2h8a2 2 0 012 2v4z" /></svg>`};
         
         const statusTextMap = Object.keys(texts.sv).filter(k => k.startsWith('status.')).reduce((acc, k) => ({ ...acc, [k.replace('status.', '')]: t(k) }), {});
         const statusColors = { utkast: 'bg-yellow-400', 'förslag-skickat': 'bg-blue-400', godkänd: 'bg-green-500', genomförd: 'bg-indigo-500', betald: 'bg-purple-500', förlorad: 'bg-red-500', arkiverad: 'bg-slate-400' };
@@ -1227,6 +1228,58 @@
             return [overlay, modalPositioner];
         }
 
+        function renderChatLogModal() {
+            if (!state.isChatLogModalOpen || !state.formData) return null;
+
+            const theme = themes[state.theme];
+            const closeModal = () => setState({ isChatLogModalOpen: false });
+            
+            const logContent = state.formData.aiRawLog;
+            let contentElement;
+
+            if (logContent && logContent.trim() !== "") {
+                contentElement = createElement('pre', { 
+                    className: `w-full h-full p-4 ${theme.inputBg} rounded-lg overflow-auto whitespace-pre-wrap`,
+                    style: { fontFamily: 'monospace' }
+                }, logContent);
+            } else {
+                contentElement = createElement('div', { className: `w-full h-full p-4 ${theme.inputBg} rounded-lg flex items-center justify-center` },
+                    createElement('p', { className: theme.textSecondary }, 'Detta ärende skapades manuellt. Ingen chattlogg finns tillgänglig.')
+                );
+            }
+
+            const modalContent = createElement('div', { 
+                className: `w-full max-h-[80vh] md:max-w-xl lg:max-w-2xl ${theme.cardBg} flex flex-col shadow-2xl rounded-t-2xl md:rounded-2xl animate-slide-in-up md:animate-fade-in-scale`,
+                style: { pointerEvents: 'auto' },
+                onclick: e => e.stopPropagation()
+            });
+
+            const header = createElement('header', { className: `flex-shrink-0 p-4 border-b ${theme.border} flex items-center justify-between` }, 
+                createElement('h2', { className: 'text-xl font-bold' }, 'Chattlogg för Ärende ' + state.formData.id), 
+                createElement('button', {className:`p-2 ${theme.buttonSecondaryBg} rounded-lg`, innerHTML:icons.x('w-5 h-5'), onclick:closeModal})
+            );
+
+            const body = createElement('div', { className: 'flex-grow p-4 md:p-6 overflow-hidden' },
+                createElement('div', { className: 'h-full max-h-[60vh] overflow-y-auto' }, contentElement)
+            );
+
+            modalContent.append(header, body);
+
+            const overlay = createElement('div', { 
+                className: 'fixed inset-0 z-50 animate-fade-in-fast ' + theme.modalOverlay, 
+                onclick: closeModal 
+            });
+
+            const modalPositioner = createElement('div', { 
+                className: 'fixed inset-0 z-50 p-0 md:p-8 flex flex-col items-center justify-end md:justify-center',
+                style: { pointerEvents: 'none' },
+                onclick: closeModal,
+            });
+
+            modalPositioner.append(modalContent);
+            return [overlay, modalPositioner];
+        }
+
         function renderQuoteModal() {
             if (!state.formData) return null;
             const theme = themes[state.theme];
@@ -1333,7 +1386,24 @@
             statusSelector.append(statusButton);
             
             const headerContent = createElement('div', {className: 'flex-grow flex items-center gap-4'}, createElement('h2', { className: 'text-xl font-bold' }, q.recordId ? t('modal.edit_title') : t('modal.create_title')), statusSelector);
-            const header = createElement('header', { className: `flex-shrink-0 p-4 border-b ${theme.border}` }, createElement('div', {className: 'flex items-center justify-between'}, headerContent, createElement('div', {className:'flex items-center gap-2'}, createElement('button', {className:`p-2 ${theme.buttonSecondaryBg} rounded-lg`, innerHTML:icons.filePdf('w-5 h-5'), onclick:()=>generatePdf(q)}), createElement('button', {className:`p-2 ${theme.buttonSecondaryBg} rounded-lg`, innerHTML:icons.x('w-5 h-5'), onclick:closeModal}))));
+            const headerButtons = createElement('div', {className:'flex items-center gap-2'},
+                createElement('button', {
+                    className: `p-2 ${theme.buttonSecondaryBg} rounded-lg`,
+                    innerHTML: icons.chatAlt2('w-5 h-5'),
+                    onclick: () => setState({ isChatLogModalOpen: true })
+                }),
+                createElement('button', {
+                    className: `p-2 ${theme.buttonSecondaryBg} rounded-lg`,
+                    innerHTML: icons.filePdf('w-5 h-5'),
+                    onclick: () => generatePdf(q)
+                }),
+                createElement('button', {
+                    className: `p-2 ${theme.buttonSecondaryBg} rounded-lg`,
+                    innerHTML: icons.x('w-5 h-5'),
+                    onclick: closeModal
+                })
+            );
+            const header = createElement('header', { className: `flex-shrink-0 p-4 border-b ${theme.border}` }, createElement('div', {className: 'flex items-center justify-between'}, headerContent, headerButtons));
             
             const createField = (key, label, type='text', fullWidth=false) => {
                 const props = {
@@ -1508,25 +1578,30 @@
                 
                 const standardDiets = { vegetarian: 'Vegetarian', vegan: 'Vegan', gluten: 'Glutenfritt', laktos: 'Laktosfritt', notallergi: 'Nötallergi' };
                 Object.entries(standardDiets).forEach(([key, label]) => {
-                    const count = q.standardDiets && q.standardDiets[key];
-                    const isChecked = count !== undefined && count > 0;
+                    const count = (q.standardDiets && q.standardDiets[key]) || '';
                     
-                    const numberInput = createElement('input', {type:'number', min:'1', value: count || '1', onchange: e=>update('standardDiets',{...(q.standardDiets||{}), [key]:Number(e.target.value) || 1}), className:`w-20 p-2 rounded-lg border ${theme.border} ${theme.inputBg} ${!isChecked ? 'hidden':''}`});
+                    const numberInput = createElement('input', {
+                        type:'number', 
+                        min:'0', 
+                        value: count, 
+                        placeholder: '0',
+                        onchange: e => {
+                            const newCount = Number(e.target.value);
+                            const currentDiets = { ...state.formData.standardDiets };
+                            if (newCount > 0) {
+                                currentDiets[key] = newCount;
+                            } else {
+                                delete currentDiets[key];
+                            }
+                            update('standardDiets', currentDiets);
+                        }, 
+                        className:`w-20 p-2 rounded-lg border ${theme.border} ${theme.inputBg}`
+                    });
                     
-                    const checkbox = createElement('input', {type:'checkbox', checked: isChecked, onchange: e => {
-                        const currentDiets = { ...state.formData.standardDiets };
-                        if (e.target.checked) {
-                            currentDiets[key] = count || 1;
-                        } else {
-                            delete currentDiets[key];
-                        }
-                        update('standardDiets', currentDiets);
-                        numberInput.classList.toggle('hidden', !e.target.checked);
-                        if (e.target.checked) {
-                            numberInput.value = '1';
-                        }
-                    }, className:'h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500'});
-                    content.append(createElement('div',{className:'flex items-center gap-4'}, checkbox, createElement('label',{className:'flex-grow'},label), numberInput));
+                    content.append(createElement('div',{className:'flex items-center justify-between gap-4'}, 
+                        createElement('label',{className:'flex-grow'},label), 
+                        numberInput
+                    ));
                 });
                 
                 const customDietsContainer = createElement('div', {className: 'space-y-2'});
@@ -1649,6 +1724,7 @@
             appRoot.append(mainWrapper);
             if (state.formData) appRoot.append(renderQuoteModal());
             if (state.isTemplateEditorOpen) appRoot.append(...renderTemplateEditorModal());
+            if (state.isChatLogModalOpen) appRoot.append(...renderChatLogModal());
             
             if(state.isTimePickerOpen) appRoot.append(renderTimePicker());
             if(state.toast) appRoot.append(renderToast());
@@ -1706,4 +1782,6 @@
     </script>
 </body>
 </html>
+
+
 
