@@ -554,7 +554,14 @@
              }
              (quote.customCosts || []).forEach(c => {
                 const vatPercent = ((c.vatRate || 0.25) * 100);
-                tableRows.push([`${c.description} (${vatPercent}% moms)`, 'Extra kostnad', formatCurrency(c.amount)]);
+                // --- PDF GENERERING UPPDATERING ---
+                // Använd Antal och À-pris om de finns, annars visa "Extra kostnad"
+                let detailText = 'Extra kostnad';
+                if (c.quantity && c.unitPrice) {
+                    detailText = `${c.quantity}st x ${c.unitPrice.toLocaleString('sv-SE')} kr/st`;
+                }
+                tableRows.push([`${c.description} (${vatPercent}% moms)`, detailText, formatCurrency(c.amount)]);
+                // --- SLUT PDF UPPDATERING ---
              }); 
              if (quote.discountAmount > 0) tableRows.push(['Rabatt', '', `-${formatCurrency(quote.discountAmount)}`]);
              
@@ -1580,31 +1587,119 @@
                 const renderRows = (costList) => {
                     container.innerHTML = '';
                     (costList || []).forEach((cost, index) => {
-                        const row = createElement('div', {className: 'grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center'},
-                            createElement('input', {placeholder:'Beskrivning', value: cost.description, oninput: e => { state.formData.customCosts[index].description = e.target.value; update('customCosts', state.formData.customCosts); }, className: `p-2 rounded-lg border ${theme.border} ${theme.inputBg}` }),
-                            createElement('input', {type:'number', value: cost.amount, placeholder: 'Belopp (ex. moms)', onchange: e => { state.formData.customCosts[index].amount = Number(e.target.value); update('customCosts', state.formData.customCosts); }, className: `w-32 p-2 rounded-lg border ${theme.border} ${theme.inputBg}` }),
-                            (() => {
-                                const vatSelect = createElement('select', { 
-                                    onchange: e => { 
-                                        state.formData.customCosts[index].vatRate = Number(e.target.value); 
-                                        update('customCosts', state.formData.customCosts); 
-                                    },
-                                    className: `p-2 rounded-lg border ${theme.border} ${theme.inputBg}`
-                                });
-                                [0.25, 0.12, 0.06].forEach(rate => {
-                                    const option = createElement('option', { value: rate }, `${rate * 100}%`);
-                                    if ((cost.vatRate || 0.25) === rate) {
-                                        option.selected = true;
-                                    }
-                                    vatSelect.append(option);
-                                });
-                                return vatSelect;
-                            })(),
-                            createElement('button', {className: 'p-2', innerHTML: icons.trash('w-5 h-5 text-red-500'), onclick: ()=>{
+                        
+                        // --- INPUT ELEMENTEN ---
+                        const descInput = createElement('input', {
+                            placeholder:'Beskrivning', 
+                            value: cost.description || '', 
+                            onchange: e => { 
+                                state.formData.customCosts[index].description = e.target.value; 
+                                // Ingen full uppdatering behövs, sparas vid "Spara"
+                            }, 
+                            className: `p-2 rounded-lg border ${theme.border} ${theme.inputBg}` 
+                        });
+                        
+                        const qtyInput = createElement('input', {
+                            type:'number', 
+                            placeholder: 'Antal', 
+                            value: cost.quantity || '', 
+                            className: `w-20 p-2 rounded-lg border ${theme.border} ${theme.inputBg}` 
+                        });
+
+                        const priceInput = createElement('input', {
+                            type:'number', 
+                            placeholder: 'À-pris (ex. moms)', 
+                            value: cost.unitPrice || '', 
+                            className: `w-32 p-2 rounded-lg border ${theme.border} ${theme.inputBg}` 
+                        });
+
+                        const totalInput = createElement('input', {
+                            type:'number', 
+                            value: cost.amount || '', 
+                            placeholder: 'Totalt (ex. moms)', 
+                            className: `w-32 p-2 rounded-lg border ${theme.border} ${theme.inputBg}` 
+                        });
+
+                        const vatSelect = createElement('select', { 
+                            onchange: e => { 
+                                state.formData.customCosts[index].vatRate = Number(e.target.value); 
+                                update('customCosts', state.formData.customCosts); 
+                            },
+                            className: `p-2 rounded-lg border ${theme.border} ${theme.inputBg}`
+                        });
+                        [0.25, 0.12, 0.06].forEach(rate => {
+                            const option = createElement('option', { value: rate }, `${rate * 100}%`);
+                            if ((cost.vatRate || 0.25) === rate) {
+                                option.selected = true;
+                            }
+                            vatSelect.append(option);
+                        });
+
+                        const deleteBtn = createElement('button', {
+                            className: 'p-2', 
+                            innerHTML: icons.trash('w-5 h-5 text-red-500'), 
+                            onclick: ()=>{
                                 const newCosts = state.formData.customCosts.filter((_,i)=>i!==index);
                                 update('customCosts', newCosts);
                                 renderRows(newCosts);
-                            }})
+                            }
+                        });
+
+                        // --- LOGIK ---
+                        const onUnitChange = () => {
+                            const qty = Number(qtyInput.value) || 0;
+                            const price = Number(priceInput.value) || 0;
+                            const total = qty * price;
+                            
+                            totalInput.value = total;
+                            totalInput.readOnly = true;
+                            totalInput.classList.add('bg-slate-200', 'dark:bg-slate-700');
+
+                            state.formData.customCosts[index].quantity = qty;
+                            state.formData.customCosts[index].unitPrice = price;
+                            state.formData.customCosts[index].amount = total;
+                            update('customCosts', state.formData.customCosts);
+                        };
+
+                        const onTotalChange = () => {
+                            const total = Number(totalInput.value) || 0;
+                            
+                            qtyInput.value = '';
+                            priceInput.value = '';
+                            totalInput.readOnly = false;
+                            totalInput.classList.remove('bg-slate-200', 'dark:bg-slate-700');
+
+                            state.formData.customCosts[index].quantity = null;
+                            state.formData.customCosts[index].unitPrice = null;
+                            state.formData.customCosts[index].amount = total;
+                            update('customCosts', state.formData.customCosts);
+                        };
+
+                        qtyInput.onchange = onUnitChange;
+                        priceInput.onchange = onUnitChange;
+                        totalInput.onchange = onTotalChange;
+
+                        // --- INITIELLT LÄGE ---
+                        if (cost.quantity || cost.unitPrice) {
+                            totalInput.readOnly = true;
+                            totalInput.classList.add('bg-slate-200', 'dark:bg-slate-700');
+                            // Säkerställ att 'amount' är korrekt beräknat
+                            const calculatedAmount = (cost.quantity || 0) * (cost.unitPrice || 0);
+                            cost.amount = calculatedAmount;
+                            totalInput.value = calculatedAmount;
+                        } else {
+                            totalInput.readOnly = false;
+                            totalInput.classList.remove('bg-slate-200', 'dark:bg-slate-700');
+                        }
+
+                        // --- MONTERA RADEN ---
+                        const row = createElement('div', {className: 'grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 items-center'},
+                            descInput,
+                            qtyInput,
+                            priceInput,
+                            totalInput,
+                            vatSelect,
+                            deleteBtn
                         );
                         container.append(row);
                     });
@@ -1612,7 +1707,7 @@
                 
                 renderRows(q.customCosts);
                 const addButton = createElement('button', {className: `text-sm font-semibold ${theme.accent}`, onclick: () => {
-                    const newCosts = [...(state.formData.customCosts || []), {description: '', amount: 0, vatRate: 0.25}];
+                    const newCosts = [...(state.formData.customCosts || []), {description: '', quantity: null, unitPrice: null, amount: 0, vatRate: 0.25}];
                     update('customCosts', newCosts);
                     renderRows(newCosts);
                 }}, '+ Lägg till extra kostnad');
@@ -1837,3 +1932,4 @@
     </script>
 </body>
 </html>
+
