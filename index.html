@@ -199,8 +199,8 @@
                 eventDate: (n8nQuote.eventDate || n8nQuote.eventDatum) ? new Date(n8nQuote.eventDate || n8nQuote.eventDatum).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
                 eventStartTime: n8nQuote.eventStartTime || n8nQuote.starttid || n8nQuote.eventTid || "17:00",
                 eventEndTime: n8nQuote.eventEndTime || n8nQuote.sluttid || "01:00",
-                pricePerGuest: Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) || 0,
-                menuDescription: n8nQuote.menuDescription || n8nQuote.meny || n8nQuote.menuPreference || '',
+                menuDescription: n8nQuote.menuDescription || '', // Huvudbeskrivning
+                menuItems: [], // Initialiseras här, fylls på nedan
                 customerRequests: n8nQuote.customerRequests || n8nQuote.kundensOnskemal || n8nQuote.KundensOnskemal || n8nQuote.otherRequests || '',
                 numChefs: Number(n8nQuote.numChefs || n8nQuote.antalKockar) || 0,
                 chefHours: Number(n8nQuote.chefHours) || 0,
@@ -220,6 +220,17 @@
                 sentDate: n8nQuote.sentDate ? new Date(n8nQuote.sentDate).toLocaleDateString('sv-SE') : null,
                 aiRawLog: n8nQuote['Full Conversation Log'] || n8nQuote.aiRawLog || '',
             };
+            
+            // Hantera menyalternativ för bakåtkompatibilitet
+            const menuItems = safeJsonParse(n8nQuote.menuItems, []);
+            if (menuItems.length === 0 && (n8nQuote.meny || n8nQuote.menuPreference || Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) > 0)) {
+                menuItems.push({
+                    description: n8nQuote.meny || n8nQuote.menuPreference || 'Standardmeny', // Ta bort n8nQuote.menuDescription
+                    guestCount: Number(n8nQuote.guestCount || n8nQuote.antalGaster) || 0,
+                    pricePerGuest: Number(n8nQuote.pricePerGuest || n8nQuote.prisPerKuvert) || 0
+                });
+            }
+            quoteObject.menuItems = menuItems;
             
             if (!quoteObject.total) {
                 quoteObject.total = calculateTotal(quoteObject);
@@ -243,8 +254,8 @@
                 eventDate: portalQuote.eventDate,
                 eventStartTime: portalQuote.eventStartTime,
                 eventEndTime: portalQuote.eventEndTime,
-                pricePerGuest: Number(portalQuote.pricePerGuest) || 0,
-                menuDescription: portalQuote.menuDescription,
+                menuDescription: portalQuote.menuDescription || '',
+                menuItems: portalQuote.menuItems || [],
                 customerRequests: portalQuote.customerRequests,
                 numChefs: Number(portalQuote.numChefs) || 0,
                 chefHours: Number(portalQuote.chefHours) || 0,
@@ -277,8 +288,12 @@
         const formatDate = (date) => new Date(date).toLocaleDateString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit' });
         const calculatePriceDetails = (q) => {
             // Matpriset (pricePerGuest) är nu INKLUSIVE 12% moms. Vi räknar ut exkl. moms-värdet.
-            const totalFoodCostInclVat = (Number(q.guestCount) || 0) * (Number(q.pricePerGuest) || 0);
-            const foodCostExclVat = totalFoodCostInclVat / 1.12;
+            // Loopa igenom alla menyalternativ för att få den totala matkostnaden
+            let foodCostExclVat = 0;
+            (q.menuItems || []).forEach(item => {
+                const itemCostInclVat = (Number(item.guestCount) || 0) * (Number(item.pricePerGuest) || 0);
+                foodCostExclVat += (itemCostInclVat / 1.12);
+            });
             
             // Personal och extra kostnader är exklusive moms.
             const staffCost = (Number(q.chefCost) || 0) + (Number(q.servingStaffCost) || 0);
@@ -423,7 +438,9 @@
             const newId = `GK-${Date.now()}`; 
             const q = { 
                 id: newId, recordId: null, status: 'utkast', guestCount: 20, 
-                eventDate: new Date().toISOString().split('T')[0], pricePerGuest: 375, 
+                eventDate: new Date().toISOString().split('T')[0], 
+                menuDescription: '',
+                menuItems: [{ description: '', guestCount: 20, pricePerGuest: 375 }],
                 customCosts:[], standardDiets:{}, customDiets:[],
                 chefHours: 0, chefRate: 0, servingStaffHours: 0, servingStaffRate: 0,
             }; 
@@ -523,22 +540,50 @@
 
 
              doc.setFontSize(11).setFont('helvetica', 'bold').text('MENY', 14, 140);
-             const menuLines = doc.splitTextToSize(quote.menuDescription || 'Ej specificerat', 182);
-             doc.setFont('helvetica', 'normal').text(menuLines, 14, 146);
+             doc.setFont('helvetica', 'normal');
+             let menuY = 146;
              
-             const menuHeight = doc.getTextDimensions(menuLines).h;
-             const pricesYStart = 146 + menuHeight;
+             if (quote.menuDescription) {
+                const mainDescLines = doc.splitTextToSize(quote.menuDescription, 182);
+                doc.text(mainDescLines, 14, menuY);
+                menuY += doc.getTextDimensions(mainDescLines).h + 4; // Add padding
+             }
+            
+             // Add a separator if there are also items
+             if (quote.menuDescription && (quote.menuItems || []).length > 0) {
+                doc.setFont('helvetica', 'bold').text('Detaljerade menyval:', 14, menuY);
+                menuY += 6;
+             }
 
+             (quote.menuItems || []).forEach(item => {
+                if (item.description) {
+                    const menuLines = doc.splitTextToSize(item.description, 182);
+                    doc.text(menuLines, 14, menuY);
+                    menuY += doc.getTextDimensions(menuLines).h + 2; // Add padding
+                }
+             });
+             if ((quote.menuItems || []).length === 0 && !quote.menuDescription) {
+                doc.text('Ej specificerat', 14, 146);
+                menuY += 10;
+             }
+             const pricesYStart = menuY; // Dynamisk start-Y för pris-sektionen
+             
              doc.setFontSize(11).setFont('helvetica', 'bold').text('PRISER', 14, pricesYStart + 10);
 
              const { subTotal, vat, total, vatBreakdown } = calculatePriceDetails(quote); 
              const formatCurrency = (amount) => (amount || 0).toLocaleString('sv-SE') + ' kr';
              
              const tableRows = [];
-             // Matpriset visas exkl. moms i tabellen
-             const totalFoodCostInclVat = (quote.guestCount || 0) * (quote.pricePerGuest || 0);
-             const foodCostExclVat = totalFoodCostInclVat / 1.12;
-             tableRows.push(['Mat (12% moms)', `${(quote.pricePerGuest || 0).toLocaleString('sv-SE')} kr x ${quote.guestCount}p`, formatCurrency(foodCostExclVat)]);
+             // Loopa menyalternativ för pris-tabellen
+             (quote.menuItems || []).forEach(item => {
+                const itemCostInclVat = (Number(item.guestCount) || 0) * (Number(item.pricePerGuest) || 0);
+                const itemCostExclVat = itemCostInclVat / 1.12;
+                tableRows.push([
+                    `Mat: ${item.description ? item.description.substring(0, 50) : 'Meny'} (12% moms)`, 
+                    `${(item.pricePerGuest || 0).toLocaleString('sv-SE')} kr x ${item.guestCount}p`, 
+                    formatCurrency(itemCostExclVat)
+                ]);
+             });
 
              if (quote.chefCost > 0) {
                 const detailText = (quote.numChefs && quote.chefHours && quote.chefRate) 
@@ -1484,54 +1529,196 @@
             };
             const createTextarea = (key, label) => createElement('div', {className:'sm:col-span-2'}, createElement('label', {className:'block text-sm font-medium mb-1'}, label), createElement('textarea', {oninput: e=>update(key,e.target.value), className:`w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]`}, q[key]||''));
             
-            const createMenuDescriptionField = () => {
-                const wrapper = createElement('div', { className: 'sm:col-span-2 relative' });
-                const labelWrapper = createElement('div', { className: 'flex justify-between items-center mb-1' });
-                const label = createElement('label', { className: 'block text-sm font-medium' }, 'Menybeskrivning');
-                
-                const buttonWrapper = createElement('div', { className: 'flex items-center gap-4' });
-                
-                const manageButton = createElement('button', {
-                    type: 'button',
-                    className: `flex items-center gap-1 text-sm ${theme.textSecondary} hover:${theme.text}`,
-                    onclick: () => setState({ isTemplateEditorOpen: true })
-                }, createElement('div',{innerHTML: icons.cog('w-4 h-4')}), 'Hantera mallar');
+            const createMenuSection = () => {
+                const id = 'menu';
+                const theme = themes[state.theme]; // Get theme context
+                const q = state.formData; // Get quote data context
 
-                const selectButton = createElement('button', {
+                const content = createElement('div', { className: `space-y-4 ${state.openSections[id] ? '' : 'hidden'}` });
+                
+                // --- START OF NEW CODE ---
+                const mainDescWrapper = createElement('div', { className: 'relative space-y-2' });
+                const mainDescLabel = createElement('label', { className: 'block text-sm font-medium' }, 'Huvudbeskrivning Meny');
+                
+                const mainDescTextarea = createElement('textarea', {
+                    placeholder: 'Övergripande menybeskrivning (t.ex. "Italiensk buffé")',
+                    className: `w-full p-2 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]`,
+                    oninput: e => {
+                        update('menuDescription', e.target.value);
+                    }
+                }, q.menuDescription || '');
+
+                const mainTemplateButton = createElement('button', {
                     type: 'button',
                     className: `text-sm font-semibold ${theme.accent}`,
                     onclick: (e) => {
                         e.stopPropagation();
-                        const existingMenu = document.getElementById('menu-template-popup');
+                        const existingMenu = document.getElementById('main-menu-template-popup');
                         if (existingMenu) { existingMenu.remove(); return; }
+                        
+                        // Ta bort andra öppna menyer
+                        document.querySelectorAll('[id^="menu-template-popup-"]').forEach(m => m.remove());
 
-                        const menuPopup = createElement('div', { id: 'menu-template-popup', className: `absolute right-0 mt-2 w-full md:w-96 max-h-80 overflow-y-auto ${theme.cardBg} rounded-lg shadow-2xl border ${theme.border} z-20 animate-fade-in-fast` });
+                        const menuPopup = createElement('div', { id: `main-menu-template-popup`, className: `absolute right-0 mt-2 w-full md:w-96 max-h-80 overflow-y-auto ${theme.cardBg} rounded-lg shadow-2xl border ${theme.border} z-20 animate-fade-in-fast` });
 
                         Object.entries(state.menuTemplates).forEach(([category, menus]) => {
                             menuPopup.append(createElement('h4', { className: `px-4 py-2 font-bold text-xs uppercase ${theme.textSecondary} ${theme.bg}` }, category));
                             Object.entries(menus).forEach(([title, description]) => {
-                                menuPopup.append(createElement('a', { href: '#', className: `block px-4 py-2 text-sm ${theme.text} hover:bg-slate-100 dark:hover:bg-slate-700`, onclick: (ev) => {
+                                menuPopup.append(createElement('a', { href: '#', className: `block px-4 py-2 text-sm ${theme.text} hover:bg-slate-100 dark:hover:bg-slate-700`, 
+                                onclick: (ev) => {
                                     ev.preventDefault();
-                                    textarea.value = description;
-                                    update('menuDescription', description);
+                                    const currentText = mainDescTextarea.value;
+                                    // Append functionality
+                                    const newText = (currentText ? currentText.trim() + "\n\n" : "") + description;
+                                    
+                                    mainDescTextarea.value = newText; // Update view
+                                    update('menuDescription', newText); // Update state
                                     menuPopup.remove();
                                 } }, title));
                             });
                         });
-                        wrapper.append(menuPopup);
+                        mainDescWrapper.append(menuPopup); // Append to wrapper
                     }
-                }, 'Välj från mall');
+                }, 'Välj från mall (Lägg till)');
+                
+                mainDescWrapper.append(mainDescLabel, mainDescTextarea, mainTemplateButton);
+                content.append(mainDescWrapper);
+                
+                // Add a separator
+                content.append(createElement('hr', { className: theme.border }));
+                
+                // --- END OF NEW CODE ---
 
-                buttonWrapper.append(manageButton, selectButton);
-                labelWrapper.append(label, buttonWrapper);
+                const menuContainer = createElement('div', { className: 'space-y-4' });
 
-                const textarea = createElement('textarea', {
-                    oninput: e => update('menuDescription', e.target.value),
-                    className: `w-full p-3 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[100px]`
-                }, q.menuDescription || '');
+                const rerenderMenuRows = (menuList = state.formData.menuItems) => {
+                    menuContainer.innerHTML = '';
+                    (menuList || []).forEach((item, index) => {
+                        const row = createElement('div', { className: `p-3 border ${theme.border} rounded-lg space-y-2` });
+                        
+                        const descTextarea = createElement('textarea', {
+                            placeholder: 'Menybeskrivning',
+                            className: `w-full p-2 rounded-lg border ${theme.border} ${theme.inputBg} min-h-[80px]`,
+                            oninput: e => {
+                                state.formData.menuItems[index].description = e.target.value;
+                                // Ingen full uppdatering, sparas vid "Spara" eller annan prisändring
+                            }
+                        }, item.description || '');
 
-                wrapper.append(labelWrapper, textarea);
-                return wrapper;
+                        // Add template button for each menu item's textarea
+                        const templateButton = createElement('button', {
+                            type: 'button',
+                            className: `text-sm font-semibold ${theme.accent} mt-1`,
+                            onclick: (e) => {
+                                e.stopPropagation();
+                                const existingMenu = document.getElementById(`menu-template-popup-${index}`);
+                                if (existingMenu) { existingMenu.remove(); return; }
+                                
+                                // Ta bort andra öppna menyer
+                                document.querySelectorAll('[id^="menu-template-popup-"]').forEach(m => m.remove());
+
+                                const menuPopup = createElement('div', { id: `menu-template-popup-${index}`, className: `absolute right-0 mt-2 w-full md:w-96 max-h-80 overflow-y-auto ${theme.cardBg} rounded-lg shadow-2xl border ${theme.border} z-20 animate-fade-in-fast` });
+
+                                Object.entries(state.menuTemplates).forEach(([category, menus]) => {
+                                    menuPopup.append(createElement('h4', { className: `px-4 py-2 font-bold text-xs uppercase ${theme.textSecondary} ${theme.bg}` }, category));
+                                    Object.entries(menus).forEach(([title, description]) => {
+                                        menuPopup.append(createElement('a', { href: '#', className: `block px-4 py-2 text-sm ${theme.text} hover:bg-slate-100 dark:hover:bg-slate-700`, onclick: (ev) => {
+                                            ev.preventDefault();
+                                            const currentText = descTextarea.value;
+                                            // Append functionality
+                                            const newText = (currentText ? currentText.trim() + "\n\n" : "") + description;
+                                            
+                                            descTextarea.value = newText; // Update view
+                                            state.formData.menuItems[index].description = newText; // Update state
+                                            menuPopup.remove();
+                                        } }, title));
+                                    });
+                                });
+                                row.append(menuPopup); // Append to row, relative positioning
+                            }
+                        }, 'Välj från mall');
+                        
+                        const descWrapper = createElement('div', { className: 'relative' }, descTextarea, templateButton);
+
+                        const guestInput = createElement('input', {
+                            type: 'number', placeholder: 'Antal gäster', value: item.guestCount || '',
+                            className: `w-full p-2 rounded-lg border ${theme.border} ${theme.inputBg}`,
+                            onchange: e => {
+                                state.formData.menuItems[index].guestCount = Number(e.target.value);
+                                update('menuItems', state.formData.menuItems);
+                                rerenderMenuRows();
+                            }
+                        });
+
+                        const priceInput = createElement('input', {
+                            type: 'number', placeholder: 'Pris/kuvert (inkl. moms)', value: item.pricePerGuest || '',
+                            className: `w-full p-2 rounded-lg border ${theme.border} ${theme.inputBg}`,
+                            onchange: e => {
+                                state.formData.menuItems[index].pricePerGuest = Number(e.target.value);
+                                update('menuItems', state.formData.menuItems);
+                                rerenderMenuRows();
+                            }
+                        });
+
+                        const itemTotal = (Number(item.guestCount) || 0) * (Number(item.pricePerGuest) || 0);
+                        const totalDisplay = createElement('div', { className: `p-2 text-right ${theme.textSecondary}` }, `Totalt: ${itemTotal.toLocaleString('sv-SE')} kr`);
+                        
+                        const deleteBtn = createElement('button', {
+                            className: 'p-2', innerHTML: icons.trash('w-5 h-5 text-red-500'),
+                            onclick: () => {
+                                const newItems = state.formData.menuItems.filter((_, i) => i !== index);
+                                update('menuItems', newItems);
+                                rerenderMenuRows(newItems);
+                            }
+                        });
+
+                        const controls = createElement('div', { className: 'grid grid-cols-2 gap-2 items-center' }, guestInput, priceInput);
+                        const footer = createElement('div', { className: 'flex justify-between items-center' }, deleteBtn, totalDisplay);
+                        
+                        row.append(descWrapper, controls, footer);
+                        menuContainer.append(row);
+                    });
+                };
+                
+                rerenderMenuRows(q.menuItems);
+
+                const addButton = createElement('button', {
+                    className: `text-sm font-semibold ${theme.accent}`,
+                    onclick: () => {
+                        const newItems = [...(state.formData.menuItems || []), {
+                            description: '',
+                            guestCount: state.formData.guestCount || 0, // Default to main guest count
+                            pricePerGuest: 0
+                        }];
+                        update('menuItems', newItems);
+                        rerenderMenuRows(newItems);
+                    }
+                }, '+ Lägg till meny');
+                
+                // Add 'Kundens önskemål' back, but inside this section
+                const customerRequestsTextarea = createTextarea('customerRequests', 'Kundens önskemål');
+                
+                // Add 'Hantera mallar' button
+                const manageTemplatesButton = createElement('button', {
+                        type: 'button',
+                        className: `flex items-center gap-1 text-sm ${theme.textSecondary} hover:${theme.text} mt-4`,
+                        onclick: () => setState({ isTemplateEditorOpen: true })
+                    }, createElement('div',{innerHTML: icons.cog('w-4 h-4')}), 'Hantera alla mallar');
+
+                content.append(menuContainer, addButton, customerRequestsTextarea, manageTemplatesButton);
+
+                // --- Wrapper ---
+                const icon = createElement('div', { className: 'transition-transform ' + (state.openSections[id] ? 'rotate-180' : ''), innerHTML: icons.arrowDown('w-5 h-5') });
+                const header = createElement('div', {
+                    className: 'flex items-center justify-between cursor-pointer mb-4',
+                    onclick: () => {
+                        content.classList.toggle('hidden');
+                        icon.classList.toggle('rotate-180');
+                        state.openSections[id] = !state.openSections[id];
+                    }
+                }, createElement('h3', { className: 'text-lg font-semibold' }, 'Meny & Pris'), icon);
+                
+                return createElement('section', null, header, content);
             };
 
             const createSection = (title, id, fields) => {
@@ -1791,8 +1978,8 @@
             };
 
             const formWrapper = createElement('div', { className: 'flex-grow overflow-y-auto p-4 md:p-6 space-y-6' },
-                createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('customerType', 'Kundtyp'), createField('customerIdNumber', 'Org/Personnummer'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal gäster', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
-                createSection('Meny & Pris', 'menu', [ createField('pricePerGuest', 'Pris per kuvert (inkl. moms)', 'number'), createMenuDescriptionField(), createTextarea('customerRequests', 'Kundens önskemål') ]),
+                createSection('Kund & Event', 'info', [ createField('customer', 'Kundnamn'), createField('contactPerson', 'Kontaktperson'), createField('customerType', 'Kundtyp'), createField('customerIdNumber', 'Org/Personnummer'), createField('contactEmail', 'E-post', 'email'), createField('contactPhone', 'Telefon', 'tel'), createField('address', 'Adress', 'text', true), createField('guestCount', 'Antal personer', 'number'), createField('eventDate', 'Eventdatum', 'date'), createField('eventStartTime', 'Starttid', 'time'), createField('eventEndTime', 'Sluttid', 'time') ]),
+                createMenuSection(),
                 createPersonalCostsSection(),
                 customCostsSection(),
                 dietSection(),
@@ -1932,4 +2119,7 @@
     </script>
 </body>
 </html>
+
+
+
 
