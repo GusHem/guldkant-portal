@@ -368,26 +368,57 @@
         async function handleSaveQuote(quote, show=true) { 
             const isNewQuote = !quote.recordId;
             
-            let optimisticQuotes;
             if (isNewQuote) {
-                optimisticQuotes = [...state.quotes, quote];
-            } else {
-                optimisticQuotes = state.quotes.map(q => q.id === quote.id ? quote : q);
-            }
-             setState({ quotes: optimisticQuotes, formData: null, selectedQuoteId: null });
+                // Lösning B: Blockera modalen medan ny post skapas
+                const saveBtn = document.getElementById('modal-save-btn');
+                const sendBtn = document.getElementById('modal-send-btn');
+                const deleteBtn = document.getElementById('modal-delete-btn');
+                
+                if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Sparar...'; }
+                if (sendBtn) sendBtn.disabled = true;
+                if (deleteBtn) deleteBtn.disabled = true;
+                
+                try {
+                    // Vänta på svar från servern
+                    const response = await dataService.saveQuote(quote); 
+                    const newRecordId = response.recordId;
+                    
+                    if (!newRecordId) {
+                        throw new Error("Servern returnerade inget recordId. Kontrollera n8n.");
+                    }
 
-            try { 
-                const response = await dataService.saveQuote(quote); 
-                if (isNewQuote && response.recordId) {
-                    const finalQuotes = state.quotes.map(q => q.id === quote.id ? { ...q, recordId: response.recordId } : q);
-                    setState({ quotes: finalQuotes }, { render: false });
+                    const finalQuote = { ...quote, recordId: newRecordId };
+                    
+                    // Uppdatera state med den nya, kompletta posten och stäng modalen
+                    const finalQuotes = [...state.quotes, finalQuote];
+                    setState({ quotes: finalQuotes, formData: null, selectedQuoteId: null }); 
+                    
+                    if(show) showToast(t('toast.saved', {id: quote.id})); 
+
+                } catch (e) { 
+                    console.error(e); 
+                    showToast(e.message || 'Sparning misslyckades.', 'error'); 
+                    // Återställ knappar vid fel
+                    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Spara'; }
+                    if (sendBtn) sendBtn.disabled = false;
+                    if (deleteBtn) deleteBtn.disabled = false;
+                    // Stäng inte modalen, låt användaren se felet och försöka igen.
                 }
-                if(show) showToast(t('toast.saved', {id: quote.id})); 
-            } catch (e) { 
-                console.error(e); 
-                showToast('Sparning misslyckades.', 'error'); 
-                loadInitialData();
-            } 
+
+            } else {
+                // Befintlig logik för UPPDATERING (fungerar bra)
+                const optimisticQuotes = state.quotes.map(q => q.id === quote.id ? quote : q);
+                setState({ quotes: optimisticQuotes, formData: null, selectedQuoteId: null }); // Stäng modalen direkt
+
+                try { 
+                    await dataService.saveQuote(quote); // Synka i bakgrunden
+                    if(show) showToast(t('toast.saved', {id: quote.id})); 
+                } catch (e) { 
+                    console.error(e); 
+                    showToast('Sparning misslyckades.', 'error'); 
+                    loadInitialData(); // Ladda om allt vid fel
+                } 
+            }
         }
         async function handleSendProposal(quote) {
             setState({ isConfirmModalOpen: false, quoteToSend: null });
@@ -2018,6 +2049,7 @@
             
             const footerActions = createElement('div', {className:'flex flex-col md:flex-row md:justify-between md:items-center gap-3'});
             const deleteButton = createElement('button', {
+                id: 'modal-delete-btn', // ID TILLAGT
                 className: `w-full md:w-auto justify-center px-4 py-2 font-semibold text-red-500 hover:bg-red-100 dark:hover:bg-red-500/10 rounded-lg flex items-center gap-2`,
                 onclick: () => {
                     if (!q.recordId) {
@@ -2032,8 +2064,8 @@
 
             const mainActions = createElement('div', {className:'flex flex-col md:flex-row items-center gap-3 w-full md:w-auto'},
                 createElement('div',{id:'modal-total', className:'text-2xl font-bold order-first md:order-none md:mr-4'}, `Totalt: ${total.toLocaleString('sv-SE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} kr`),
-                createElement('button',{className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); closeModal()}}, 'Spara'),
-                createElement('button',{className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag')
+                createElement('button',{id: 'modal-save-btn', className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg`, onclick:()=>{handleSaveQuote(state.formData); /* closeModal() borttaget */}}, 'Spara'),
+                createElement('button',{id: 'modal-send-btn', className:`w-full md:w-auto px-6 py-3 font-bold ${theme.buttonPrimaryBg} ${theme.buttonPrimaryText} ${theme.buttonPrimaryHover} rounded-lg`, onclick:()=> setState({ isConfirmModalOpen: true, quoteToSend: state.formData })}, 'Skicka Förslag')
             );
 
             footerActions.append(deleteButton, mainActions);
