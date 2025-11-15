@@ -41,7 +41,9 @@
 
         const state = {
             isLoggedIn: false, isLoading: true, quotes: [], selectedQuoteId: null, activeView: 'quotes',
-            filter: 'prioriterade', searchTerm: '', toast: null, showWidgets: true,
+            filter: 'prioriterade', searchTerm: '', 
+            locationFilter: 'all', // <-- NYTT PLATS-FILTER
+            toast: null, showWidgets: true,
             theme: 'light',
             formData: null, openSections: { info: true, menu: true, costs: true, customCosts: true, diets: true, internal: true },
             isTimePickerOpen: false, timePickerTarget: null, calendarViewDate: new Date(),
@@ -507,10 +509,24 @@
                 const isArchivedStatus = ['förlorad', 'arkiverad'].includes(q.status);
                 const isActive = !(isArchivedStatus || (eventIsInThePast && isCompletedStatus));
                 
+                // 1. Status Filter
                 const filterLogic = { 'prioriterade': isActive && (eventDate >= now), 'aktiva': isActive, 'kommande': eventDate >= now && !['genomförd', 'betald', 'förlorad'].includes(q.status), 'alla': true };
-                const matchesFilter = filterLogic[state.filter] ?? q.status === state.filter;
-                if (!matchesFilter) return false;
-                const term = state.searchTerm.toLowerCase(); return !term || (q.customer || '').toLowerCase().includes(term) || (q.id || '').toLowerCase().includes(term);
+                const matchesStatusFilter = filterLogic[state.filter] ?? q.status === state.filter;
+                if (!matchesStatusFilter) return false;
+                
+                // 2. Location Filter
+                const locationFilter = state.locationFilter;
+                const quoteLocationTag = q.locationTag; // Kan vara 'vimmerby', 'vastervik', eller null/''
+
+                if (locationFilter !== 'all') {
+                    if (quoteLocationTag !== locationFilter) {
+                        return false;
+                    }
+                }
+                
+                // 3. Search Term Filter
+                const term = state.searchTerm.toLowerCase();
+                return !term || (q.customer || '').toLowerCase().includes(term) || (q.id || '').toLowerCase().includes(term);
             }).sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
         }
         
@@ -870,6 +886,61 @@
 
             statusDropdownContainer.append(statusButton);
 
+            // --- NYTT PLATS-FILTER (Steg 2) ---
+            const locationDropdownContainer = createElement('div', { className: 'relative flex-shrink-0' });
+            
+            const locationFilterLabels = {
+                'all': 'Alla platser',
+                'vimmerby': 'Vimmerby',
+                'vastervik': 'Västervik'
+            };
+
+            const locationButton = createElement('button', { 
+                className: `flex items-center gap-2 px-4 py-3 font-semibold ${theme.buttonSecondaryBg} ${theme.buttonSecondaryHover} rounded-lg whitespace-nowrap`, 
+                onclick: (e) => {
+                    e.stopPropagation();
+                    // Använd ett unikt ID för plats-menyn
+                    const menu = document.getElementById('global-filter-location-menu');
+                    if (menu) {
+                        menu.remove();
+                    } else {
+                         // Stäng andra filtermenyer
+                         const existingStatusMenu = document.getElementById('global-filter-status-menu');
+                         if (existingStatusMenu) existingStatusMenu.remove();
+
+                         const targetRect = e.currentTarget.getBoundingClientRect();
+                         const locations = [
+                            { label: 'Alla platser', value: 'all' },
+                            { label: 'Vimmerby', value: 'vimmerby' },
+                            { label: 'Västervik', value: 'vastervik' }
+                         ];
+                         
+                         const newMenu = createElement('div', { 
+                            id: 'global-filter-location-menu', 
+                            className: `fixed w-48 ${theme.cardBg} rounded-lg shadow-lg border ${theme.border} z-30 animate-fade-in-fast`, 
+                            style: { top: `${targetRect.bottom + 5}px`, left: `${targetRect.left}px`} 
+                         });
+                         
+                         locations.forEach(loc => {
+                             newMenu.append(createElement('a', { 
+                                className: 'block px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer', 
+                                onclick: () => {
+                                 setState({ locationFilter: loc.value, displayLimit: 12 });
+                                 newMenu.remove();
+                            } }, loc.label));
+                         });
+                         document.body.append(newMenu);
+                    }
+                } 
+            }, 
+            locationFilterLabels[state.locationFilter] || 'Alla platser', // Dynamisk label
+            createElement('div', {innerHTML: icons.house('w-4 h-4')}), // Hus-ikon
+            createElement('div', {innerHTML: icons.arrowDown('w-4 h-4')})
+            );
+
+            locationDropdownContainer.append(locationButton);
+            // --- SLUT NYTT PLATS-FILTER ---
+
             const searchWrapper = createElement('div', { className: 'relative flex-grow' });
             searchWrapper.append(
                 createElement('div', { 
@@ -891,6 +962,7 @@
             const controlsFlexContainer = createElement('div', { className: 'flex items-center gap-2 md:gap-4' });
             controlsFlexContainer.append(
                 statusDropdownContainer,
+                locationDropdownContainer, // <-- TILLAGD HÄR
                 searchWrapper,
                 newQuoteButton
             );
